@@ -37,6 +37,7 @@ jobs:
         run: |
           pyinstaller --name CanvasFileGrabber --windowed --onefile `
             --collect-all playwright --collect-all webview `
+            --paths src `
             --add-data "web;web" --add-data "config.example.json;." `
             run.py
           move dist\CanvasFileGrabber.exe CanvasFileGrabber-Windows.exe
@@ -46,19 +47,21 @@ jobs:
         run: |
           pyinstaller --name CanvasFileGrabber --windowed --onefile \
             --collect-all playwright --collect-all webview \
+            --paths src \
             --add-data "web:web" --add-data "config.example.json:." \
             run.py
           cd dist
           zip -r ../CanvasFileGrabber-Mac.zip CanvasFileGrabber.app
           cd ..
 
-      - name: Build with PyInstaller (Linux)
+     - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-gi gir1.2-webkit2-4.1
           pyinstaller --name CanvasFileGrabber --windowed --onefile \
             --collect-all playwright --collect-all webview \
+            --paths src \
             --add-data "web:web" --add-data "config.example.json:." \
             run.py
           cd dist
