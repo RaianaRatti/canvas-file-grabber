@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canvas File Grabber</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Login view -->
+  <section id="login-view" class="view">
+    <div class="login-card">
+      <div class="lamp"></div>
+      <h1>Canvas File Grabber</h1>
+      <p class="subtitle">Log in to load your courses. Your password is typed into Canvas, never into this app.</p>
+      <button id="login-btn" class="primary">Log in to Canvas</button>
+      <p id="login-status" class="status"></p>
+    </div>
+  </section>
+
+  <!-- Main view -->
+  <section id="main-view" class="view hidden">
+    <header class="topbar">
+      <div>
+        <span class="eyebrow">Canvas File Grabber</span>
+        <h1>Your courses</h1>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="show-past" checked>
+        <span>Show past courses</span>
+      </label>
+    </header>
+
+    <div id="course-list" class="course-list"></div>
+
+    <footer class="actionbar">
+      <div class="field">
+        <label for="ext-input">File endings</label>
+        <input type="text" id="ext-input" placeholder="pdf, pptx, docx">
+      </div>
+      <div class="field">
+        <label>Save to</label>
+        <div class="folder-pick">
+          <button id="folder-btn" class="ghost">Choose folder</button>
+          <span id="folder-path" class="path">downloads</span>
+        </div>
+      </div>
+      <button id="download-btn" class="primary" disabled>Download selected</button>
+    </footer>
+
+    <div id="progress" class="progress hidden">
+      <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+      <p id="progress-text" class="status"></p>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
