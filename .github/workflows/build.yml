@@ -4,6 +4,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -11,14 +14,8 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            output_name: CanvasFileGrabber.exe
-            asset_name: CanvasFileGrabber-Windows.exe
           - os: macos-latest
-            output_name: CanvasFileGrabber
-            asset_name: CanvasFileGrabber-Mac.zip
           - os: ubuntu-latest
-            output_name: CanvasFileGrabber
-            asset_name: CanvasFileGrabber-Linux.zip
 
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +39,7 @@ jobs:
             --collect-all playwright --collect-all webview `
             --add-data "web;web" --add-data "config.example.json;." `
             run.py
+          move dist\CanvasFileGrabber.exe CanvasFileGrabber-Windows.exe
 
       - name: Build with PyInstaller (macOS)
         if: runner.os == 'macOS'
@@ -50,6 +48,9 @@ jobs:
             --collect-all playwright --collect-all webview \
             --add-data "web:web" --add-data "config.example.json:." \
             run.py
+          cd dist
+          zip -r ../CanvasFileGrabber-Mac.zip CanvasFileGrabber.app
+          cd ..
 
       - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
@@ -60,25 +61,14 @@ jobs:
             --collect-all playwright --collect-all webview \
             --add-data "web:web" --add-data "config.example.json:." \
             run.py
-
-      - name: Zip macOS build
-        if: runner.os == 'macOS'
-        run: |
-          cd dist
-          zip -r ../CanvasFileGrabber-Mac.zip CanvasFileGrabber.app
-          cd ..
-
-      - name: Zip Linux build
-        if: runner.os == 'Linux'
-        run: |
           cd dist
           zip -r ../CanvasFileGrabber-Linux.zip CanvasFileGrabber
           cd ..
 
-      - name: Upload assets to release
-        uses: softprops/action-gh-release@v1
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/CanvasFileGrabber.exe
+            CanvasFileGrabber-Windows.exe
             CanvasFileGrabber-Mac.zip
             CanvasFileGrabber-Linux.zip
