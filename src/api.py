@@ -8,6 +8,7 @@ from auth import login_and_save
 import canvas
 from downloader import matches_extension, safe_name, download_file
 
+
 class Api:
     def __init__(self, config_path="config.json"):
         self.cfg = load_config(config_path)
@@ -49,13 +50,21 @@ class Api:
 
     def get_folders(self, course_id):
         folders = canvas.list_folders(self.session, self.cfg["base_url"], course_id)
-        out = [{
+        return [{
             "id": f["id"],
-            "name": f.get("full_name") or f.get("name"),
+            "name": f.get("name"),
+            "parent_id": f.get("parent_folder_id"),
             "files_count": f.get("files_count", 0),
+            "folders_count": f.get("folders_count", 0),
         } for f in folders]
-        out.sort(key=lambda x: x["name"])
-        return out
+
+    def get_files(self, folder_id):
+        files = canvas.list_folder_files(self.session, self.cfg["base_url"], folder_id)
+        return [{
+            "id": f["id"],
+            "name": f.get("display_name") or f.get("filename"),
+            "size": f.get("size", 0),
+        } for f in files]
 
     def choose_output_dir(self):
         window = webview.windows[0]
@@ -82,23 +91,35 @@ class Api:
         base_url = self.cfg["base_url"]
         exts = [e.strip() for e in extensions if e.strip()]
 
-        jobs = []  # (course_name, file_obj)
+        jobs = []          # (course_name, file_obj)
+        seen = set()       # file ids already queued
+
+        def add(course_name, f):
+            fid = f.get("id")
+            if fid in seen:
+                return
+            seen.add(fid)
+            name = f.get("display_name") or f.get("filename", "")
+            if matches_extension(name, exts):
+                jobs.append((course_name, f))
+
         for sel in selections:
             course_id = sel["course_id"]
             course_name = safe_name(sel.get("course_name") or f"course_{course_id}")
-            folder_ids = sel.get("folder_ids") or []
 
-            if folder_ids:
-                files = []
-                for fid in folder_ids:
-                    files.extend(canvas.list_folder_files(self.session, base_url, fid))
-            else:
-                files = canvas.list_course_files(self.session, base_url, course_id)
+            if sel.get("whole"):
+                for f in canvas.list_course_files(self.session, base_url, course_id):
+                    add(course_name, f)
 
-            for f in files:
-                name = f.get("display_name") or f.get("filename", "")
-                if matches_extension(name, exts):
-                    jobs.append((course_name, f))
+            for fid in sel.get("folder_ids", []):
+                for f in canvas.list_folder_files(self.session, base_url, fid):
+                    add(course_name, f)
+
+            for file_id in sel.get("file_ids", []):
+                try:
+                    add(course_name, canvas.get_file(self.session, base_url, file_id))
+                except Exception:
+                    pass
 
         self.progress = {
             "running": True, "done": 0, "total": len(jobs),
