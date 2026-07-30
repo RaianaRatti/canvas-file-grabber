@@ -62,6 +62,8 @@ def main():
         wanted = [f for f in files
                   if matches_extension(f.get("display_name")
                                        or f.get("filename", ""), extensions)]
+        if files and not wanted:
+            print(f"{course_name}: {len(files)} files found (none match {extensions})")
         if not wanted:
             continue
 
