@@ -3,12 +3,15 @@ import sys
 
 import webview
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
-from api import Api  # noqa: E402
 
 def resource_path(rel):
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, rel)
+
+
+sys.path.insert(0, resource_path("src"))
+from api import Api  # noqa: E402
+
 
 def main():
     api = Api()
