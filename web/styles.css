@@ -134,7 +134,7 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 
 .tile-icon { width: 46px; height: 42px; display: grid; place-items: center; }
 .tile-icon svg { width: 46px; height: 42px; }
-.icon-folder { fill: #f2b64e; }
+.icon-folder { fill: var(--accent); }
 .icon-file .body { fill: #cbd0e0; }
 .icon-file .fold { fill: #9aa0b4; }
 
@@ -223,28 +223,11 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 
 .swatch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; justify-items: center; }
 .swatch {
-  width: 58px; height: 58px; border-radius: 50%;
+  width: 58px; height: 58px; border-radius: 12px;
   border: 2px solid var(--accent-soft); padding: 0; cursor: pointer;
   transition: transform 0.12s, box-shadow 0.12s;
 }
 .swatch:hover { transform: scale(1.06); }
 .swatch.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-
-.outbox-row { display: flex; gap: 14px; }
-.outbox-btn {
-  flex: 1; font: inherit; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.1em; font-size: 13px;
-  background: transparent; color: var(--muted);
-  border: 1px solid var(--border); border-radius: 10px; padding: 14px 0; cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
-}
-.outbox-btn:hover { border-color: var(--accent); color: var(--accent); }
-.outbox-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-
-/* Output box light variant */
-:root[data-outbox="light"] .progress {
-  background: #ffffff; color: #1a1c24; border-radius: 12px; padding: 16px 20px; margin: 14px 30px 22px;
-}
-:root[data-outbox="light"] .progress .status { color: #4b5563; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

@@ -84,13 +84,6 @@ function applyTheme(mode, accentKey) {
   markActiveSwatch(mode, accentKey);
 }
 
-function applyOutbox(kind) {
-  document.documentElement.setAttribute("data-outbox", kind);
-  localStorage.setItem("cfg-outbox", kind);
-  document.querySelectorAll(".outbox-btn").forEach((b) =>
-    b.classList.toggle("active", b.dataset.out === kind));
-}
-
 function markActiveSwatch(mode, accentKey) {
   document.querySelectorAll(".swatch").forEach((s) =>
     s.classList.toggle("active", s.dataset.mode === mode && s.dataset.accent === accentKey));
@@ -113,9 +106,6 @@ function buildThemeUI() {
   makeSwatch(mono, "dark", "mono", "#141414", "#ffffff");
   makeSwatch(mono, "light", "mono", "#ffffff", "#141414");
 
-  document.querySelectorAll(".outbox-btn").forEach((b) =>
-    b.addEventListener("click", () => applyOutbox(b.dataset.out)));
-
   el("settings-btn").addEventListener("click", () => el("theme-modal").classList.remove("hidden"));
   el("theme-close").addEventListener("click", () => el("theme-modal").classList.add("hidden"));
   el("theme-modal").addEventListener("click", (e) => {
@@ -125,7 +115,6 @@ function buildThemeUI() {
   // Restore saved choices, or fall back to the default dark/amber theme.
   const saved = JSON.parse(localStorage.getItem("cfg-theme") || "null");
   if (saved) applyTheme(saved.mode, saved.accentKey);
-  applyOutbox(localStorage.getItem("cfg-outbox") || "dark");
 }
 
 /* init */
