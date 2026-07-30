@@ -357,7 +357,6 @@ downloads/
 __pycache__/
 *.pyc
 .venv/
-venv/
 ```
 
 ---

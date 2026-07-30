@@ -1,0 +1,7 @@
+config.json
+storage_state.json
+downloads/
+__pycache__/
+*.pyc
+.venv/
+venv/
