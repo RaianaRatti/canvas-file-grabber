@@ -2,12 +2,14 @@ import os
 import re
 
 def matches_extension(filename, extensions):
+    if not extensions:
+        return True
     lower = filename.lower()
     return any(lower.endswith("." + e.lower().lstrip(".")) for e in extensions)
 
 
 def safe_name(name):
-    return re.sub(r'[<>:"/\\|?*]', "_", name).strip()
+    return re.sub(r'[<>:"/\\|?*]', "_", name or "").strip() or "untitled"
 
 
 def unique_path(directory, filename):
