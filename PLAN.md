@@ -2,13 +2,13 @@
 
 ## Summary
 
-**canvas-file-grabber** is a small desktop app that logs into any Canvas instance as the user, shows all of their courses (current and past) in a window, lets them pick whole courses or specific folders, and downloads the matching files into a folder they choose.
+**canvas-file-grabber** is a small desktop app that logs into any Canvas instance as the user, shows all of their courses (current and past) in a window, lets them browse into course folders like a file explorer, pick whole courses, specific folders, or individual files, and downloads the matching files into a folder they choose.
 
-**Goal:** Open a native window that lists your Canvas courses. Expand any course to see its folders. Tick the courses or folders you want, type the file endings to keep (for example `pdf, pptx, docx`), pick an output folder, and download. It works on school hosted Canvas instances, including ones behind SSO and multi factor authentication (OTP), and it includes past courses.
+**Goal:** Open a native window that lists your Canvas courses. Click the dropdown caret on a course to open a folder browser. Folders appear as folder icons you can click into, nested folders open the same way, and files appear as file icons with their names. Tick a folder to grab everything in it, click a file to grab just that file, or tick the course itself to grab everything. Type the file endings to keep (for example `pdf, pptx, docx`), pick an output folder, and download. It works on school hosted Canvas instances, including ones behind SSO and multi factor authentication (OTP), and it includes past courses.
 
 **How auth works:** The user logs in through a real browser window that the tool controls. They type their own email, password, and OTP into the genuine Canvas login page. The app never sees or stores the raw password. After a successful login the session cookies are saved locally and reused, so the browser only appears once. All course listing and downloading then happens over plain HTTP using those cookies.
 
-**How the UI works:** A Python backend exposes a small set of methods. A native window built with **pywebview** loads a local HTML/CSS/JS frontend. The frontend calls the backend methods directly through `window.pywebview.api`, so there is no separate web server, no ports, and no CORS setup.
+**How the UI works:** A Python backend exposes a small set of methods. A native window built with **pywebview** loads a local HTML/CSS/JS frontend. The frontend calls the backend methods directly through `window.pywebview.api`, so there is no separate web server, no ports, and no CORS setup. The folder tree is built on the frontend from a single flat list of folders, so drilling into nested folders is instant.
 
 ---
 
@@ -31,7 +31,7 @@ canvas-file-grabber/
 │   └── api.py            # the Api class the frontend calls into
 ├── web/
 │   ├── index.html        # frontend markup
-│   ├── styles.css         # frontend styling
+│   ├── styles.css        # frontend styling
 │   └── app.js            # frontend logic
 └── downloads/            # default output folder (gitignored)
 ```
@@ -135,7 +135,9 @@ def login_and_save(base_url, storage_path):
 
 This module turns the saved cookies into a normal HTTP session and reads courses, folders, and files. Canvas returns long lists across pages using a `Link` header, so pagination follows the `rel="next"` link until it runs out.
 
-**Past courses** are handled by asking Canvas twice, once for active enrollments and once for completed ones, then merging the two lists. Active is processed last so a course you are still in is never mislabeled as past. Passing `include[]=term` gives each course its term name for display.
+**Past courses** are handled by asking Canvas twice, once for active enrollments and once for completed ones, then merging the two lists. Active is processed last so a course you are still in is never mislabeled as past.
+
+The folders endpoint returns every folder in the course as a flat list, each with a `parent_folder_id`. That single list is enough for the frontend to build the whole folder tree, so nested folders need no extra requests. `get_file` re-fetches a single file at download time to get a fresh, non expired download URL.
 
 `src/canvas.py`:
 
@@ -201,6 +203,7 @@ def list_courses(session, base_url):
 
 
 def list_folders(session, base_url, course_id):
+    """Flat list of every folder in the course, with parent_folder_id."""
     url = f"{base_url}/api/v1/courses/{course_id}/folders"
     try:
         return _get_paginated(session, url, params={"per_page": 100})
@@ -221,7 +224,13 @@ def list_course_files(session, base_url, course_id):
     try:
         return _get_paginated(session, url, params={"per_page": 100})
     except requests.HTTPError:
-        return []  # some courses disable the files API
+        return []
+
+
+def get_file(session, base_url, file_id):
+    r = session.get(f"{base_url}/api/v1/files/{file_id}", timeout=30)
+    r.raise_for_status()
+    return r.json()
 ```
 
 ### Step 4: Downloader
@@ -269,7 +278,9 @@ def download_file(session, file_obj, dest_dir):
 
 ### Step 5: The Api bridge
 
-This is the object the frontend talks to. Every public method here becomes callable from JavaScript as `window.pywebview.api.method_name(...)` and returns a promise. Downloads run on a background thread so the window stays responsive, and the frontend reads progress by polling `get_progress`.
+This is the object the frontend talks to. Every public method becomes callable from JavaScript as `window.pywebview.api.method_name(...)` and returns a promise.
+
+`get_folders` returns the flat folder list with `parent_id` so the frontend can build the tree. `get_files` returns the files inside one folder for display. A selection can mix three things per course: the whole course, specific folders, and specific files. At download time the backend fetches fresh file lists and fresh single file URLs, then dedupes by file id so nothing downloads twice.
 
 `src/api.py`:
 
@@ -326,13 +337,21 @@ class Api:
 
     def get_folders(self, course_id):
         folders = canvas.list_folders(self.session, self.cfg["base_url"], course_id)
-        out = [{
+        return [{
             "id": f["id"],
-            "name": f.get("full_name") or f.get("name"),
+            "name": f.get("name"),
+            "parent_id": f.get("parent_folder_id"),
             "files_count": f.get("files_count", 0),
+            "folders_count": f.get("folders_count", 0),
         } for f in folders]
-        out.sort(key=lambda x: x["name"])
-        return out
+
+    def get_files(self, folder_id):
+        files = canvas.list_folder_files(self.session, self.cfg["base_url"], folder_id)
+        return [{
+            "id": f["id"],
+            "name": f.get("display_name") or f.get("filename"),
+            "size": f.get("size", 0),
+        } for f in files]
 
     def choose_output_dir(self):
         window = webview.windows[0]
@@ -359,23 +378,35 @@ class Api:
         base_url = self.cfg["base_url"]
         exts = [e.strip() for e in extensions if e.strip()]
 
-        jobs = []  # (course_name, file_obj)
+        jobs = []          # (course_name, file_obj)
+        seen = set()       # file ids already queued
+
+        def add(course_name, f):
+            fid = f.get("id")
+            if fid in seen:
+                return
+            seen.add(fid)
+            name = f.get("display_name") or f.get("filename", "")
+            if matches_extension(name, exts):
+                jobs.append((course_name, f))
+
         for sel in selections:
             course_id = sel["course_id"]
             course_name = safe_name(sel.get("course_name") or f"course_{course_id}")
-            folder_ids = sel.get("folder_ids") or []
 
-            if folder_ids:
-                files = []
-                for fid in folder_ids:
-                    files.extend(canvas.list_folder_files(self.session, base_url, fid))
-            else:
-                files = canvas.list_course_files(self.session, base_url, course_id)
+            if sel.get("whole"):
+                for f in canvas.list_course_files(self.session, base_url, course_id):
+                    add(course_name, f)
 
-            for f in files:
-                name = f.get("display_name") or f.get("filename", "")
-                if matches_extension(name, exts):
-                    jobs.append((course_name, f))
+            for fid in sel.get("folder_ids", []):
+                for f in canvas.list_folder_files(self.session, base_url, fid):
+                    add(course_name, f)
+
+            for file_id in sel.get("file_ids", []):
+                try:
+                    add(course_name, canvas.get_file(self.session, base_url, file_id))
+                except Exception:
+                    pass
 
         self.progress = {
             "running": True, "done": 0, "total": len(jobs),
@@ -437,7 +468,7 @@ python run.py
 
 ## Frontend
 
-Three files in `web/`. The design uses a deep ink background with a warm amber accent, Space Grotesk for headings and Inter for body text, and course cards that behave like file folders that open to reveal their contents.
+Three files in `web/`. The design uses a deep ink background with a warm amber accent, Space Grotesk for headings and Inter for body text. Each course row has a dropdown caret on the right. Opening it reveals a folder browser: folders are folder shaped tiles you click into, a breadcrumb bar tracks how deep you are, and files are file shaped tiles with their names.
 
 ### web/index.html
 
@@ -534,58 +565,39 @@ body {
 h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing: -0.02em; }
 
 .hidden { display: none !important; }
-
 .view { height: 100vh; display: flex; flex-direction: column; }
+.muted { color: var(--muted); font-size: 13px; }
+.pad { padding: 14px 4px; }
 
 /* Login */
 #login-view { align-items: center; justify-content: center; }
-
 .login-card {
-  position: relative;
-  width: 380px;
-  padding: 40px 34px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  text-align: center;
-  overflow: hidden;
+  position: relative; width: 380px; padding: 40px 34px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); text-align: center; overflow: hidden;
 }
-
 .lamp {
-  position: absolute;
-  top: -80px; left: 50%;
-  width: 220px; height: 220px;
-  transform: translateX(-50%);
+  position: absolute; top: -80px; left: 50%;
+  width: 220px; height: 220px; transform: translateX(-50%);
   background: radial-gradient(circle, var(--accent-soft), transparent 70%);
   pointer-events: none;
 }
-
 .login-card h1 { font-size: 24px; margin-bottom: 10px; }
 .subtitle { color: var(--muted); font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
 
 /* Buttons */
 .primary {
-  font: inherit; font-weight: 600;
-  background: var(--accent);
-  color: #191308;
-  border: none;
-  padding: 11px 20px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.15s, transform 0.05s;
+  font: inherit; font-weight: 600; background: var(--accent);
+  color: #191308; border: none; padding: 11px 20px; border-radius: 10px;
+  cursor: pointer; transition: background 0.15s, transform 0.05s;
 }
 .primary:hover:not(:disabled) { background: var(--accent-deep); }
 .primary:active:not(:disabled) { transform: translateY(1px); }
 .primary:disabled { opacity: 0.4; cursor: default; }
 
 .ghost {
-  font: inherit; font-weight: 500;
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--border);
-  padding: 9px 14px;
-  border-radius: 10px;
-  cursor: pointer;
+  font: inherit; font-weight: 500; background: transparent; color: var(--text);
+  border: 1px solid var(--border); padding: 9px 14px; border-radius: 10px; cursor: pointer;
 }
 .ghost:hover { border-color: var(--accent); }
 
@@ -594,15 +606,10 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 /* Topbar */
 .topbar {
   display: flex; align-items: flex-end; justify-content: space-between;
-  padding: 26px 30px 18px;
-  border-bottom: 1px solid var(--border);
+  padding: 26px 30px 18px; border-bottom: 1px solid var(--border);
 }
-.eyebrow {
-  text-transform: uppercase; letter-spacing: 0.14em;
-  font-size: 11px; color: var(--accent); font-weight: 600;
-}
+.eyebrow { text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; color: var(--accent); font-weight: 600; }
 .topbar h1 { font-size: 26px; margin-top: 4px; }
-
 .toggle { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; }
 .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
 
@@ -610,17 +617,14 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 .course-list { flex: 1; overflow-y: auto; padding: 18px 30px; }
 
 .course-card {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  margin-bottom: 12px;
-  transition: border-color 0.15s;
+  border: 1px solid var(--border); border-left: 3px solid var(--border);
+  border-radius: var(--radius); background: var(--surface);
+  margin-bottom: 12px; transition: border-color 0.15s;
 }
 .course-card.selected { border-left-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
 
 .course-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
-.course-head input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
+.course-head > input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
 
 .course-title { flex: 1; display: flex; align-items: center; gap: 10px; }
 .course-title span.name { font-weight: 600; font-size: 15px; }
@@ -628,44 +632,61 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 
 .tag {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--muted); border: 1px solid var(--border);
-  padding: 2px 7px; border-radius: 20px;
+  color: var(--muted); border: 1px solid var(--border); padding: 2px 7px; border-radius: 20px;
 }
 
-.expand {
-  font: inherit; font-size: 13px; font-weight: 500;
-  background: transparent; color: var(--accent);
-  border: none; cursor: pointer;
+/* Dropdown caret */
+.caret {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center;
+  cursor: pointer; transition: transform 0.2s, border-color 0.15s, color 0.15s;
 }
+.caret:hover { border-color: var(--accent); color: var(--accent); }
+.caret.open { transform: rotate(180deg); }
 
-.folder-box { padding: 0 18px 14px 46px; }
-.folder-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 0; color: var(--text); font-size: 13px; cursor: pointer;
+/* Folder browser */
+.browser { border-top: 1px solid var(--border); padding: 14px 18px 18px; }
+
+.crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; font-size: 13px; }
+.crumb-link { background: none; border: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0; }
+.crumb-link:hover { text-decoration: underline; }
+.crumb-sep { color: var(--muted); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+
+.tile {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: 14px 8px 12px; border: 1px solid transparent; border-radius: 12px;
+  cursor: pointer; text-align: center; transition: background 0.12s, border-color 0.12s;
 }
-.folder-row input { accent-color: var(--accent); width: 15px; height: 15px; }
-.folder-row:hover { color: var(--accent); }
+.tile:hover { background: var(--surface-hi); }
+.tile.selected { border-color: var(--accent); background: var(--accent-soft); }
 
-.muted { color: var(--muted); font-size: 13px; padding: 6px 0; }
+.tile-icon { width: 46px; height: 42px; display: grid; place-items: center; }
+.tile-icon svg { width: 100%; height: 100%; }
+.icon-folder { fill: #f2b64e; }
+.icon-file .body { fill: #cbd0e0; }
+.icon-file .fold { fill: #9aa0b4; }
+
+.tile-label {
+  font-size: 12px; color: var(--text); line-height: 1.3; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tile-sub { font-size: 11px; color: var(--muted); }
+.tile-check { position: absolute; top: 8px; right: 8px; accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 
 /* Action bar */
 .actionbar {
-  display: flex; align-items: flex-end; gap: 22px;
-  padding: 18px 30px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-hi);
+  display: flex; align-items: flex-end; gap: 22px; padding: 18px 30px;
+  border-top: 1px solid var(--border); background: var(--surface-hi);
 }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; color: var(--muted); }
 .field:first-child { flex: 1; }
 
 #ext-input {
-  font: inherit;
-  background: var(--ink);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  font: inherit; background: var(--ink); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
 }
 #ext-input:focus { outline: none; border-color: var(--accent); }
 
@@ -681,9 +702,7 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 .course-list::-webkit-scrollbar { width: 10px; }
 .course-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 
-@media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
-}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 ```
 
 ### web/app.js
@@ -691,24 +710,61 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 ```javascript
 const state = {
   courses: [],
-  folders: {},   // course_id -> [folders]
-  selected: {},  // course_id -> { course_name, folder_ids: Set }
+  nav: {},      // course_id -> { path: [{id,name}], childrenOf: {} }
+  files: {},    // folder_id -> [files]
+  selected: {}, // course_id -> { course_name, whole, folder_ids:Set, file_ids:Set }
   outputDir: "downloads",
 };
 
 const api = () => window.pywebview.api;
 const el = (id) => document.getElementById(id);
 
+const CARET_SVG =
+  '<svg viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const FOLDER_SVG =
+  '<svg class="icon-folder" viewBox="0 0 48 38" xmlns="http://www.w3.org/2000/svg"><path d="M3 6a3 3 0 0 1 3-3h11l4 5h21a3 3 0 0 1 3 3v20a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/></svg>';
+const FILE_SVG =
+  '<svg class="icon-file" viewBox="0 0 36 46" xmlns="http://www.w3.org/2000/svg"><path class="body" d="M5 4a3 3 0 0 1 3-3h14l11 11v30a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3z"/><path class="fold" d="M22 1l11 11h-8a3 3 0 0 1-3-3z"/></svg>';
+
+/* selection helpers */
+function entryFor(course) {
+  return (state.selected[course.id] = state.selected[course.id] || {
+    course_name: course.name, whole: false,
+    folder_ids: new Set(), file_ids: new Set(),
+  });
+}
+const isWhole = (cid) => !!(state.selected[cid] && state.selected[cid].whole);
+const isFolderSelected = (cid, fid) => !!(state.selected[cid] && state.selected[cid].folder_ids.has(fid));
+const isFileSelected = (cid, fid) => !!(state.selected[cid] && state.selected[cid].file_ids.has(fid));
+
+function cleanup(cid) {
+  const e = state.selected[cid];
+  if (e && !e.whole && e.folder_ids.size === 0 && e.file_ids.size === 0) delete state.selected[cid];
+}
+function courseHasSelection(cid) {
+  const e = state.selected[cid];
+  return !!(e && (e.whole || e.folder_ids.size || e.file_ids.size));
+}
+function setWhole(course, v) { entryFor(course).whole = v; cleanup(course.id); updateDownloadButton(); }
+function toggleFolder(course, fid, v) { const e = entryFor(course); v ? e.folder_ids.add(fid) : e.folder_ids.delete(fid); cleanup(course.id); updateDownloadButton(); }
+function toggleFile(course, fid, v) { const e = entryFor(course); v ? e.file_ids.add(fid) : e.file_ids.delete(fid); cleanup(course.id); updateDownloadButton(); }
+
+function refreshCard(node) {
+  const card = node.closest(".course-card");
+  if (!card) return;
+  const cid = Number(card.dataset.courseId);
+  card.classList.toggle("selected", courseHasSelection(cid));
+  const cb = card.querySelector(".course-head > input[type=checkbox]");
+  if (cb) cb.checked = isWhole(cid);
+}
+
+/* init */
 async function init() {
   const s = await api().status();
   state.outputDir = s.output_dir;
   el("folder-path").textContent = s.output_dir;
-
-  if (s.logged_in) {
-    showMain();
-  } else {
-    el("login-view").classList.remove("hidden");
-  }
+  if (s.logged_in) showMain();
+  else el("login-view").classList.remove("hidden");
 
   el("login-btn").addEventListener("click", onLogin);
   el("show-past").addEventListener("change", renderCourses);
@@ -720,18 +776,14 @@ async function onLogin() {
   el("login-status").textContent = "A browser window opened. Finish logging in there.";
   el("login-btn").disabled = true;
   const res = await api().login();
-  if (res.logged_in) {
-    showMain();
-  } else {
-    el("login-status").textContent = "Login did not complete. Try again.";
-    el("login-btn").disabled = false;
-  }
+  if (res.logged_in) showMain();
+  else { el("login-status").textContent = "Login did not complete. Try again."; el("login-btn").disabled = false; }
 }
 
 async function showMain() {
   el("login-view").classList.add("hidden");
   el("main-view").classList.remove("hidden");
-  el("course-list").innerHTML = "<p class='muted'>Loading courses...</p>";
+  el("course-list").innerHTML = "<p class='muted pad'>Loading courses...</p>";
   state.courses = await api().get_courses();
   renderCourses();
 }
@@ -740,12 +792,8 @@ function renderCourses() {
   const showPast = el("show-past").checked;
   const list = el("course-list");
   list.innerHTML = "";
-
   const courses = state.courses.filter((c) => showPast || !c.is_past);
-  if (courses.length === 0) {
-    list.innerHTML = "<p class='muted'>No courses found.</p>";
-    return;
-  }
+  if (courses.length === 0) { list.innerHTML = "<p class='muted pad'>No courses found.</p>"; return; }
   courses.forEach((c) => list.appendChild(courseCard(c)));
   updateDownloadButton();
 }
@@ -753,18 +801,17 @@ function renderCourses() {
 function courseCard(course) {
   const card = document.createElement("div");
   card.className = "course-card";
-  if (state.selected[course.id]) card.classList.add("selected");
+  card.dataset.courseId = course.id;
+  if (courseHasSelection(course.id)) card.classList.add("selected");
 
   const head = document.createElement("div");
   head.className = "course-head";
 
   const cb = document.createElement("input");
   cb.type = "checkbox";
-  cb.checked = !!state.selected[course.id];
-  cb.addEventListener("change", () => {
-    toggleCourse(course, cb.checked);
-    card.classList.toggle("selected", cb.checked);
-  });
+  cb.title = "Select the whole course";
+  cb.checked = isWhole(course.id);
+  cb.addEventListener("change", () => { setWhole(course, cb.checked); refreshCard(cb); });
 
   const title = document.createElement("div");
   title.className = "course-title";
@@ -772,82 +819,150 @@ function courseCard(course) {
   name.className = "name";
   name.textContent = course.name;
   title.appendChild(name);
-  if (course.term) {
-    const t = document.createElement("small");
-    t.textContent = course.term;
-    title.appendChild(t);
-  }
-  if (course.is_past) {
-    const tag = document.createElement("span");
-    tag.className = "tag";
-    tag.textContent = "past";
-    title.appendChild(tag);
-  }
+  if (course.term) { const t = document.createElement("small"); t.textContent = course.term; title.appendChild(t); }
+  if (course.is_past) { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "past"; title.appendChild(tag); }
 
-  const expand = document.createElement("button");
-  expand.className = "expand";
-  expand.textContent = "Folders";
-  expand.addEventListener("click", () => toggleFolders(course, card));
+  const caret = document.createElement("button");
+  caret.className = "caret";
+  caret.setAttribute("aria-label", "Show folders");
+  caret.innerHTML = CARET_SVG;
 
-  head.append(cb, title, expand);
-  card.appendChild(head);
+  const browser = document.createElement("div");
+  browser.className = "browser hidden";
 
-  const box = document.createElement("div");
-  box.className = "folder-box hidden";
-  card.appendChild(box);
+  caret.addEventListener("click", () => {
+    const open = !browser.classList.toggle("hidden");
+    caret.classList.toggle("open", open);
+    if (open) openBrowser(course, browser);
+  });
+
+  head.append(cb, title, caret);
+  card.append(head, browser);
   return card;
 }
 
-function toggleCourse(course, checked) {
-  if (checked) {
-    state.selected[course.id] = state.selected[course.id] ||
-      { course_name: course.name, folder_ids: new Set() };
-  } else {
-    delete state.selected[course.id];
+async function openBrowser(course, browser) {
+  if (!state.nav[course.id]) {
+    browser.innerHTML = "<p class='muted pad'>Loading folders...</p>";
+    const folders = await api().get_folders(course.id);
+    const childrenOf = {};
+    folders.forEach((f) => {
+      const key = f.parent_id === null ? "root" : String(f.parent_id);
+      (childrenOf[key] = childrenOf[key] || []).push(f);
+    });
+    Object.values(childrenOf).forEach((a) => a.sort((x, y) => x.name.localeCompare(y.name)));
+    state.nav[course.id] = { path: [], childrenOf };
   }
-  updateDownloadButton();
+  renderBrowser(course, browser);
 }
 
-async function toggleFolders(course, card) {
-  const box = card.querySelector(".folder-box");
-  if (!box.classList.contains("hidden")) {
-    box.classList.add("hidden");
-    return;
-  }
-  box.classList.remove("hidden");
-
-  if (!state.folders[course.id]) {
-    box.innerHTML = "<p class='muted'>Loading folders...</p>";
-    state.folders[course.id] = await api().get_folders(course.id);
-  }
-  box.innerHTML = "";
-  const folders = state.folders[course.id];
-  if (folders.length === 0) {
-    box.innerHTML = "<p class='muted'>No folders available for this course.</p>";
-    return;
-  }
-  folders.forEach((f) => {
-    const row = document.createElement("label");
-    row.className = "folder-row";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    const sel = state.selected[course.id];
-    cb.checked = sel ? sel.folder_ids.has(f.id) : false;
-    cb.addEventListener("change", () => toggleFolder(course, f.id, cb.checked));
-    const label = document.createElement("span");
-    label.textContent = `${f.name} (${f.files_count})`;
-    row.append(cb, label);
-    box.appendChild(row);
+function buildCrumb(course, browser) {
+  const nav = state.nav[course.id];
+  const crumb = document.createElement("div");
+  crumb.className = "crumb";
+  const root = document.createElement("button");
+  root.className = "crumb-link";
+  root.textContent = course.name;
+  root.addEventListener("click", () => { nav.path = []; renderBrowser(course, browser); });
+  crumb.appendChild(root);
+  nav.path.forEach((p, i) => {
+    const sep = document.createElement("span"); sep.className = "crumb-sep"; sep.textContent = "/";
+    const link = document.createElement("button"); link.className = "crumb-link"; link.textContent = p.name;
+    link.addEventListener("click", () => { nav.path = nav.path.slice(0, i + 1); renderBrowser(course, browser); });
+    crumb.append(sep, link);
   });
+  return crumb;
 }
 
-function toggleFolder(course, folderId, checked) {
-  const entry = state.selected[course.id] ||
-    { course_name: course.name, folder_ids: new Set() };
-  if (checked) entry.folder_ids.add(folderId);
-  else entry.folder_ids.delete(folderId);
-  state.selected[course.id] = entry;
-  updateDownloadButton();
+async function renderBrowser(course, browser) {
+  const nav = state.nav[course.id];
+  const inside = nav.path.length > 0;
+  const currentId = inside ? nav.path[nav.path.length - 1].id : null;
+  const key = inside ? String(currentId) : "root";
+  const folders = nav.childrenOf[key] || [];
+
+  let files = [];
+  if (inside) {
+    if (!state.files[currentId]) {
+      browser.innerHTML = "<p class='muted pad'>Loading...</p>";
+      state.files[currentId] = await api().get_files(currentId);
+    }
+    files = state.files[currentId];
+  }
+
+  browser.innerHTML = "";
+  browser.appendChild(buildCrumb(course, browser));
+
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  folders.forEach((f) => grid.appendChild(folderTile(course, f, browser)));
+  files.forEach((f) => grid.appendChild(fileTile(course, f)));
+  if (folders.length === 0 && files.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted pad";
+    empty.textContent = "This folder is empty.";
+    grid.appendChild(empty);
+  }
+  browser.appendChild(grid);
+}
+
+function folderTile(course, folder, browser) {
+  const tile = document.createElement("div");
+  tile.className = "tile folder-tile";
+  if (isFolderSelected(course.id, folder.id)) tile.classList.add("selected");
+
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.className = "tile-check";
+  check.checked = isFolderSelected(course.id, folder.id);
+  check.addEventListener("click", (e) => e.stopPropagation());
+  check.addEventListener("change", () => {
+    toggleFolder(course, folder.id, check.checked);
+    tile.classList.toggle("selected", check.checked);
+    refreshCard(tile);
+  });
+
+  const icon = document.createElement("div");
+  icon.className = "tile-icon";
+  icon.innerHTML = FOLDER_SVG;
+
+  const label = document.createElement("div");
+  label.className = "tile-label";
+  label.textContent = folder.name;
+
+  const sub = document.createElement("div");
+  sub.className = "tile-sub";
+  sub.textContent = folder.files_count + " files";
+
+  tile.append(check, icon, label, sub);
+  tile.addEventListener("click", () => {
+    state.nav[course.id].path.push({ id: folder.id, name: folder.name });
+    renderBrowser(course, browser);
+  });
+  return tile;
+}
+
+function fileTile(course, file) {
+  const tile = document.createElement("div");
+  tile.className = "tile file-tile";
+  if (isFileSelected(course.id, file.id)) tile.classList.add("selected");
+
+  const icon = document.createElement("div");
+  icon.className = "tile-icon";
+  icon.innerHTML = FILE_SVG;
+
+  const label = document.createElement("div");
+  label.className = "tile-label";
+  label.textContent = file.name;
+
+  tile.append(icon, label);
+  tile.addEventListener("click", () => {
+    const now = !isFileSelected(course.id, file.id);
+    toggleFile(course, file.id, now);
+    tile.classList.toggle("selected", now);
+    refreshCard(tile);
+  });
+  return tile;
 }
 
 async function onChooseFolder() {
@@ -861,15 +976,14 @@ function updateDownloadButton() {
 }
 
 async function onDownload() {
-  const extensions = el("ext-input").value
-    .split(",").map((s) => s.trim()).filter(Boolean);
-
+  const extensions = el("ext-input").value.split(",").map((s) => s.trim()).filter(Boolean);
   const selections = Object.entries(state.selected).map(([cid, v]) => ({
     course_id: Number(cid),
     course_name: v.course_name,
+    whole: v.whole,
     folder_ids: Array.from(v.folder_ids),
+    file_ids: Array.from(v.file_ids),
   }));
-
   el("download-btn").disabled = true;
   el("progress").classList.remove("hidden");
   await api().start_download(selections, extensions, state.outputDir);
@@ -881,14 +995,10 @@ async function pollProgress() {
   const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
   el("bar-fill").style.width = pct + "%";
   el("progress-text").textContent = p.finished
-    ? `Done. Downloaded ${p.done} of ${p.total} files into your folder.`
-    : `Downloading ${p.done} of ${p.total}: ${p.current}`;
-
-  if (!p.finished) {
-    setTimeout(pollProgress, 500);
-  } else {
-    updateDownloadButton();
-  }
+    ? "Done. Downloaded " + p.done + " of " + p.total + " files into your folder."
+    : "Downloading " + p.done + " of " + p.total + ": " + p.current;
+  if (!p.finished) setTimeout(pollProgress, 500);
+  else updateDownloadButton();
 }
 
 window.addEventListener("pywebviewready", init);
@@ -896,11 +1006,15 @@ window.addEventListener("pywebviewready", init);
 
 ---
 
-## How selection maps to downloads
+## How browsing and selection work
 
-A course selection is one object with `course_id`, `course_name`, and `folder_ids`. If `folder_ids` is empty, the backend downloads every file in that course. If it has folder ids, only those folders are downloaded. Ticking a folder without ticking the course still works, because the frontend creates the course entry the moment a folder is picked. The file endings box filters every download, so an empty box means keep everything.
+**Building the tree.** When a course is expanded, the frontend fetches its folders once as a flat list and groups them by `parent_id` into a lookup map. Folders with no parent are the top level. Because the whole tree comes from that one request, clicking into nested folders is instant and needs no more folder requests.
 
-Files land in `output_dir/course_name/`, one subfolder per course, with duplicate names getting a numbered suffix so nothing is overwritten.
+**Navigating.** A breadcrumb tracks the path from the course name down to the current folder. Clicking a folder tile pushes it onto the path and shows its subfolders and files. Clicking any breadcrumb segment jumps back to that level. Files for a folder are fetched the first time you open it and then cached.
+
+**Selecting.** There are three ways to pick what to download, and they combine. The course checkbox selects the whole course. The checkbox on a folder tile selects that folder. Clicking a file tile selects that single file. A course row shows the amber highlight whenever any of its folders, files, or the course itself is selected.
+
+**Downloading.** The backend gathers files from the whole course, from each selected folder, and from each selected file, fetching fresh lists and fresh single file URLs so links do not expire. It dedupes by file id, so a file counted twice (once by folder, once on its own) downloads only once. The file endings box filters every download, and an empty box keeps all files. Files land in `output_dir/course_name/`, one subfolder per course, with duplicate names getting a numbered suffix.
 
 ---
 
@@ -928,9 +1042,9 @@ venv/
 
 **The stored session file is sensitive.** `storage_state.json` holds live session cookies. Anyone who copies that file could act as the user until the session expires. It is gitignored, but a hardened version would store it in the OS keychain instead of a plain file.
 
-**Course files API can be restricted.** Some courses disable the files or folders endpoint. Those return empty instead of erroring, so they simply show no folders. A later version could fall back to scanning modules and pages for file links.
+**Folder and file listing can be restricted.** Some courses disable the folders or files endpoint. Those return empty, so the browser simply shows nothing for that course. A later version could fall back to scanning modules and pages for file links.
 
-**Download URLs are time limited.** Canvas file links expire quickly. The app lists and downloads in one pass, so this only matters for very large batches, where a rerun may be needed.
+**Folder file counts.** The count shown on a folder tile is the count Canvas reports for that folder only, not including its subfolders. Selecting a folder downloads the files directly in it. To also grab a subfolder, open it and select it too.
 
 **Rate limits.** Canvas throttles heavy API use. For accounts with many large courses, add a short delay between requests if you start seeing HTTP 403 or 429 responses.
 
