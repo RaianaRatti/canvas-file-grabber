@@ -10,7 +10,7 @@ from downloader import matches_extension, safe_name, download_file
 
 
 class Api:
-    def __init__(self, config_path="config.json"):
+    def __init__(self, config_path=None):
         self.cfg = load_config(config_path)
         self.session = None
         self.progress = {

@@ -3,16 +3,18 @@ import sys
 
 import webview
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 from api import Api  # noqa: E402
 
+def resource_path(rel):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, rel)
 
 def main():
     api = Api()
-    web_dir = os.path.join(os.path.dirname(__file__), "web")
     webview.create_window(
         "Canvas File Grabber",
-        os.path.join(web_dir, "index.html"),
+        resource_path("web/index.html"),
         js_api=api,
         width=920,
         height=700,
