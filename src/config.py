@@ -1,7 +1,6 @@
 import json
 import os
 
-
 def load_config(path="config.json"):
     if not os.path.exists(path):
         raise FileNotFoundError(
