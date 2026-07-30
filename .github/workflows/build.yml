@@ -41,7 +41,6 @@ jobs:
           pyinstaller --name CanvasFileGrabber --windowed --onefile `
             --collect-all playwright --collect-all webview `
             --add-data "web;web" --add-data "config.example.json;." `
-            --icon icon.ico `
             run.py
 
       - name: Build with PyInstaller (macOS)
@@ -50,7 +49,6 @@ jobs:
           pyinstaller --name CanvasFileGrabber --windowed --onefile \
             --collect-all playwright --collect-all webview \
             --add-data "web:web" --add-data "config.example.json:." \
-            --icon icon.icns \
             run.py
 
       - name: Build with PyInstaller (Linux)

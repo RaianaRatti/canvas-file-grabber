@@ -1,28 +1,47 @@
 # Canvas File Grabber
 
-A small desktop app that logs into your Canvas account, shows your courses (current and past) in a folder browser, and downloads only the file types you choose into a folder on your computer.
+A desktop app that logs into your Canvas account, shows all your courses (current and past) in a folder browser, and lets you download only the files you need.
 
-## What it does
+## Features
 
-- Lists all of your Canvas courses, including past ones if your school keeps them visible.
-- Lets you browse into course folders the way you would in a file explorer: folders you click into, files shown with their names.
-- Lets you select a whole course, specific folders, or individual files.
-- Filters everything by file ending, for example `pdf, pptx, docx`.
-- Downloads into a folder you pick, organized into one subfolder per course.
+- List all Canvas courses including past ones (if your school keeps them visible)
+- Browse course folders like a file explorer - click to open, navigate with breadcrumbs
+- Select whole courses, specific folders, or individual files
+- Filter downloads by file type (pdf, pptx, docx, etc.) or keep all types
+- Single-session login - log in once, reused until expiry
+- Real browser login supporting SSO and one-time password (OTP)
+- Batch download with progress tracking
+- Organized output - files sorted by course name into subfolders
 
-## How login works
+## Demo
 
-The app opens a real browser window pointed at your school's Canvas login page. You type your own email, password, and one time code there, the same as you always do. The app never sees or stores your password. Once you are logged in, it saves your session so you do not have to log in again next time, until that session expires.
+[Video of app in action coming soon]
 
-## Requirements
+## Quick Start
 
+Download the latest release for your operating system from [Releases](https://github.com/RaianaRatti/canvas-file-grabber/releases):
+
+- **Windows**: CanvasFileGrabber-Windows.exe
+- **macOS**: CanvasFileGrabber-Mac.dmg
+- **Linux**: CanvasFileGrabber-Linux.zip
+
+No Python install needed. Download, run, and log in.
+
+## How Login Works
+
+The app opens your real web browser to your school's Canvas login page. You enter your email, password, and one-time code exactly as you normally would. The app never sees or stores your password. After login, your session is saved locally and reused on future launches until it expires.
+
+## Development Setup
+
+If you want to modify or build the app yourself:
+
+**Requirements:**
 - Python 3.10 or newer
-- Google Chrome or Chromium available for Playwright to drive (installed automatically in setup below)
-- On Linux: a system webview backend (GTK or Qt), see setup
+- macOS 10.14+, Windows 10+, or Linux with GTK/Qt webview
 
-## Setup
+**Install:**
 
-```
+```bash
 git clone https://github.com/your-username/canvas-file-grabber.git
 cd canvas-file-grabber
 python -m venv venv
@@ -32,81 +51,89 @@ playwright install chromium
 cp config.example.json config.json
 ```
 
-Open `config.json` and set `base_url` to your school's Canvas address, for example `https://canvas.youruniversity.edu`.
+Edit `config.json` and set `base_url` to your school's Canvas URL (example: `https://canvas.youruniversity.edu`).
 
-On Linux, install a webview backend if you do not already have one:
+On Linux, install webview dependencies:
 
-```
+```bash
 sudo apt install python3-gi gir1.2-webkit2-4.1
 ```
 
-## Running
+**Run:**
 
-```
+```bash
 python run.py
 ```
 
-A window opens. The first time, click **Log in to Canvas** and finish logging in in the browser window that appears, including any school SSO steps and your one time code. Come back to the app and your courses will load.
+A window opens. Click **Log in to Canvas** the first time and complete login including any SSO or one-time code steps in the browser that appears. Return to the app and courses load.
 
-## Using the app
+## Using the App
 
-1. Tick a course's checkbox to grab the whole course, or click the caret on the right to open its folder browser.
-2. Click a folder tile to open it. Nested folders open the same way, and a breadcrumb bar at the top tracks where you are.
-3. Tick a folder's checkbox to grab everything directly inside it, or click a file tile to grab just that file.
-4. Type the file endings you want, separated by commas. Leave it blank to keep every file type.
-5. Choose an output folder.
-6. Click **Download selected**.
+1. Tick a course checkbox to select the whole course, or click the folder icon to browse inside it
+2. Open folders by clicking them. Breadcrumbs at the top let you jump back to any level
+3. Tick folders to select everything inside, or click individual files to pick them
+4. Enter file types to keep (comma separated: pdf, docx, pptx) or leave blank for all types
+5. Choose an output folder where downloads go
+6. Click **Download selected**
 
-Files are saved as `your-output-folder/Course Name/filename.ext`.
+Files save as `output-folder/Course Name/filename.ext`, organized by course.
 
-## Project structure
+## Project Structure
 
 ```
 canvas-file-grabber/
-├── README.md
-├── PLAN.md
-├── requirements.txt
-├── config.example.json
-├── run.py
+├── README.md              # This file
+├── PLAN.md                # Architecture and design decisions
+├── requirements.txt       # Python dependencies
+├── config.example.json    # Configuration template
+├── run.py                 # Entry point
 ├── src/
-│   ├── config.py
-│   ├── auth.py
-│   ├── canvas.py
-│   ├── downloader.py
-│   └── api.py
+│   ├── config.py          # Config loading and validation
+│   ├── auth.py            # Playwright login and session
+│   ├── canvas.py          # Canvas API client
+│   ├── downloader.py      # File filtering and download
+│   └── api.py             # Backend methods for frontend
 └── web/
-    ├── index.html
-    ├── styles.css
-    └── app.js
+    ├── index.html         # UI markup
+    ├── styles.css         # Styling
+    └── app.js             # Browser-side logic
 ```
 
-See `PLAN.md` for the full design and the reasoning behind each part.
+See `PLAN.md` for full architecture, design rationale, and implementation details.
 
-## Packaging as a standalone app (PyInstaller)
+## Building a Standalone Executable
 
-This turns the project into a single app your users can double click, with no Python install and no terminal required on their end. Full step by step walkthrough is below in the chat response. The short version:
+The GitHub Actions workflow in `.github/workflows/build.yml` automatically builds Windows, macOS, and Linux executables on each release. No manual build needed.
 
-```
+To build locally:
+
+```bash
 pip install pyinstaller
-pyinstaller --name CanvasFileGrabber --windowed \
+pyinstaller --name CanvasFileGrabber --windowed --onefile \
   --collect-all playwright --collect-all webview \
   --add-data "web:web" --add-data "config.example.json:." \
   run.py
 ```
 
-On Windows, replace the colons in `--add-data` with semicolons. See the walkthrough for the code changes needed first, the two ways to handle Playwright's browser, and the exact commands per operating system.
+On Windows, use semicolons instead of colons in `--add-data` paths.
 
-## Limitations
+The built executable is in `dist/CanvasFileGrabber`.
 
-**Terms of service.** Automating login to a school Canvas instance may conflict with the school's or Canvas's acceptable use policy, even when you only access your own account and files. Check your institution's rules before using this.
+## Known Limitations
 
-**Login is not headless.** The first login needs a visible browser window so you can complete SSO and your one time code. This is intentional, since automating passwords and OTP codes directly breaks on most school SSO setups.
+**Terms of service.** Automating login to your school's Canvas may violate acceptable use policies even when accessing only your own files. Check your institution's rules first.
 
-**The saved session file is sensitive.** `storage_state.json` holds live login cookies. Anyone with that file could act as you until the session expires. It is not committed to the repo.
+**Login requires browser window.** The first login must happen in a visible browser so you can complete SSO steps and two-factor codes. This is intentional - automating these directly is fragile on school SSO setups.
 
-**Selecting a folder does not include its subfolders automatically.** It grabs the files directly inside that folder. Open a subfolder and select it separately if you want its files too.
+**Session file is sensitive.** `storage_state.json` contains live login cookies. Anyone who copies it could impersonate your account until the session expires. Never share this file.
 
-**Rate limits.** Canvas throttles heavy API use. If you see repeated failures on a very large course, wait a bit and try again.
+**Folder selection is one level only.** Selecting a folder downloads files directly inside it. To get subfolders, open them and select separately.
+
+**Past courses depend on school policy.** Some schools lock old courses after terms end. Those will not show up.
+
+**Rate limits apply.** Canvas throttles heavy API use. Large downloads may need pauses between requests.
+
+**Linux requires webview.** macOS and Windows include webview by default. Linux needs GTK or Qt bindings installed.
 
 ## License
 
