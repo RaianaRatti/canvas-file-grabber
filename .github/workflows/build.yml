@@ -15,7 +15,7 @@ jobs:
             asset_name: CanvasFileGrabber-Windows.exe
           - os: macos-latest
             output_name: CanvasFileGrabber
-            asset_name: CanvasFileGrabber-Mac.dmg
+            asset_name: CanvasFileGrabber-Mac.zip
           - os: ubuntu-latest
             output_name: CanvasFileGrabber
             asset_name: CanvasFileGrabber-Linux.zip
@@ -61,17 +61,12 @@ jobs:
             --add-data "web:web" --add-data "config.example.json:." \
             run.py
 
-      - name: Create macOS DMG
+      - name: Zip macOS build
         if: runner.os == 'macOS'
         run: |
-          brew install create-dmg
-          create-dmg \
-            --volname "Canvas File Grabber" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon CanvasFileGrabber.app 150 190 \
-            CanvasFileGrabber-Mac.dmg dist/CanvasFileGrabber.app
+          cd dist
+          zip -r ../CanvasFileGrabber-Mac.zip CanvasFileGrabber.app
+          cd ..
 
       - name: Zip Linux build
         if: runner.os == 'Linux'
@@ -80,35 +75,10 @@ jobs:
           zip -r ../CanvasFileGrabber-Linux.zip CanvasFileGrabber
           cd ..
 
-      - name: Upload Windows release
-        if: runner.os == 'Windows'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/CanvasFileGrabber.exe
-          asset_name: CanvasFileGrabber-Windows.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS release
-        if: runner.os == 'macOS'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./CanvasFileGrabber-Mac.dmg
-          asset_name: CanvasFileGrabber-Mac.dmg
-          asset_content_type: application/octet-stream
-
-      - name: Upload Linux release
-        if: runner.os == 'Linux'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./CanvasFileGrabber-Linux.zip
-          asset_name: CanvasFileGrabber-Linux.zip
-          asset_content_type: application/zip
+          files: |
+            dist/CanvasFileGrabber.exe
+            CanvasFileGrabber-Mac.zip
+            CanvasFileGrabber-Linux.zip
