@@ -22,6 +22,7 @@ def session_is_valid(session, base_url):
     except requests.RequestException:
         return False
 
+
 def _get_paginated(session, url, params=None):
     results = []
     while url:
@@ -38,11 +39,38 @@ def _get_paginated(session, url, params=None):
 
 
 def list_courses(session, base_url):
-    url = f"{base_url}/api/v1/courses"
-    return _get_paginated(
-        session, url,
-        params={"enrollment_state": "active", "per_page": 100},
-    )
+    """Active and past courses, merged and deduped by id."""
+    seen = {}
+    for state in ("completed", "active"):
+        url = f"{base_url}/api/v1/courses"
+        params = {"enrollment_state": state, "per_page": 100, "include[]": "term"}
+        try:
+            page = _get_paginated(session, url, params=params)
+        except requests.HTTPError:
+            page = []
+        for c in page:
+            cid = c.get("id")
+            if cid is None:
+                continue
+            c["is_past"] = (state == "completed")
+            seen[cid] = c  # active is processed last and wins
+    return list(seen.values())
+
+
+def list_folders(session, base_url, course_id):
+    url = f"{base_url}/api/v1/courses/{course_id}/folders"
+    try:
+        return _get_paginated(session, url, params={"per_page": 100})
+    except requests.HTTPError:
+        return []
+
+
+def list_folder_files(session, base_url, folder_id):
+    url = f"{base_url}/api/v1/folders/{folder_id}/files"
+    try:
+        return _get_paginated(session, url, params={"per_page": 100})
+    except requests.HTTPError:
+        return []
 
 
 def list_course_files(session, base_url, course_id):
@@ -50,5 +78,4 @@ def list_course_files(session, base_url, course_id):
     try:
         return _get_paginated(session, url, params={"per_page": 100})
     except requests.HTTPError:
-        # Some courses disable the files API. Skip those instead of crashing.
-        return []
+        return []  # some courses disable the files API
