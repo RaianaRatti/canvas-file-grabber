@@ -367,8 +367,17 @@ async function pollProgress() {
   el("progress-text").textContent = p.finished
     ? "Done. Downloaded " + p.done + " of " + p.total + " files into your folder."
     : "Downloading " + p.done + " of " + p.total + ": " + p.current;
-  if (!p.finished) setTimeout(pollProgress, 500);
-  else updateDownloadButton();
+  if (!p.finished) {
+    setTimeout(pollProgress, 500);
+  } else {
+    updateDownloadButton();
+    // Briefly show "Done", then clear the progress bar and message.
+    setTimeout(() => {
+      el("progress").classList.add("hidden");
+      el("bar-fill").style.width = "0%";
+      el("progress-text").textContent = "";
+    }, 2500);
+  }
 }
 
 window.addEventListener("pywebviewready", init);
