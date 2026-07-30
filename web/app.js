@@ -48,8 +48,90 @@ function refreshCard(node) {
   if (cb) cb.checked = isWhole(cid);
 }
 
+/* theme picker */
+const THEME_ACCENTS = [
+  ["red", "#ef5a45"], ["orange", "#e88b30"], ["yellow", "#f4d24c"], ["green", "#77e08a"],
+  ["blue", "#5b9cf0"], ["purple", "#b473f0"], ["pink", "#ec4c96"],
+];
+
+function accentSoft(hex) {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16);
+  return `rgba(${r}, ${g}, ${b}, 0.14)`;
+}
+function accentDeep(hex) {
+  const c = hex.replace("#", "");
+  const f = (i) => Math.max(0, Math.round(parseInt(c.substr(i, 2), 16) * 0.82)).toString(16).padStart(2, "0");
+  return `#${f(0)}${f(2)}${f(4)}`;
+}
+function onAccentFor(hex) {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#191308" : "#ffffff";
+}
+
+function applyTheme(mode, accentKey) {
+  const root = document.documentElement;
+  root.setAttribute("data-mode", mode);
+  let accent;
+  if (accentKey === "mono") accent = mode === "dark" ? "#e8eaf0" : "#1a1c24";
+  else accent = (THEME_ACCENTS.find((a) => a[0] === accentKey) || [])[1] || "#f5b544";
+  root.style.setProperty("--accent", accent);
+  root.style.setProperty("--accent-deep", accentDeep(accent));
+  root.style.setProperty("--accent-soft", accentSoft(accent));
+  root.style.setProperty("--on-accent", onAccentFor(accent));
+  localStorage.setItem("cfg-theme", JSON.stringify({ mode, accentKey }));
+  markActiveSwatch(mode, accentKey);
+}
+
+function applyOutbox(kind) {
+  document.documentElement.setAttribute("data-outbox", kind);
+  localStorage.setItem("cfg-outbox", kind);
+  document.querySelectorAll(".outbox-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.out === kind));
+}
+
+function markActiveSwatch(mode, accentKey) {
+  document.querySelectorAll(".swatch").forEach((s) =>
+    s.classList.toggle("active", s.dataset.mode === mode && s.dataset.accent === accentKey));
+}
+
+function makeSwatch(container, mode, accentKey, top, fill) {
+  const s = document.createElement("button");
+  s.className = "swatch";
+  s.dataset.mode = mode;
+  s.dataset.accent = accentKey;
+  s.style.background = `linear-gradient(135deg, ${top} 0 50%, ${fill} 50% 100%)`;
+  s.addEventListener("click", () => applyTheme(mode, accentKey));
+  container.appendChild(s);
+}
+
+function buildThemeUI() {
+  const dark = el("dark-swatches"), light = el("light-swatches"), mono = el("mono-swatches");
+  THEME_ACCENTS.forEach(([key, hex]) => makeSwatch(dark, "dark", key, "#141414", hex));
+  THEME_ACCENTS.forEach(([key, hex]) => makeSwatch(light, "light", key, "#ffffff", hex));
+  makeSwatch(mono, "dark", "mono", "#141414", "#ffffff");
+  makeSwatch(mono, "light", "mono", "#ffffff", "#141414");
+
+  document.querySelectorAll(".outbox-btn").forEach((b) =>
+    b.addEventListener("click", () => applyOutbox(b.dataset.out)));
+
+  el("settings-btn").addEventListener("click", () => el("theme-modal").classList.remove("hidden"));
+  el("theme-close").addEventListener("click", () => el("theme-modal").classList.add("hidden"));
+  el("theme-modal").addEventListener("click", (e) => {
+    if (e.target.id === "theme-modal") el("theme-modal").classList.add("hidden");
+  });
+
+  // Restore saved choices, or fall back to the default dark/amber theme.
+  const saved = JSON.parse(localStorage.getItem("cfg-theme") || "null");
+  if (saved) applyTheme(saved.mode, saved.accentKey);
+  applyOutbox(localStorage.getItem("cfg-outbox") || "dark");
+}
+
 /* init */
 async function init() {
+  buildThemeUI();
+
   const s = await api().status();
   state.outputDir = s.output_dir;
   el("folder-path").textContent = s.output_dir;
