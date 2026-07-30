@@ -205,12 +205,6 @@ function folderTile(course, folder, browser) {
   check.type = "checkbox";
   check.className = "tile-check";
   check.checked = isFolderSelected(course.id, folder.id);
-  check.addEventListener("click", (e) => e.stopPropagation());
-  check.addEventListener("change", () => {
-    toggleFolder(course, folder.id, check.checked);
-    tile.classList.toggle("selected", check.checked);
-    refreshCard(tile);
-  });
 
   const icon = document.createElement("div");
   icon.className = "tile-icon";
@@ -225,7 +219,22 @@ function folderTile(course, folder, browser) {
   sub.textContent = folder.files_count + " files";
 
   tile.append(check, icon, label, sub);
+
+  // Single click anywhere on the tile toggles selection; double click opens it.
+  let clickTimer = null;
   tile.addEventListener("click", () => {
+    if (clickTimer) return;
+    clickTimer = setTimeout(() => {
+      clickTimer = null;
+      const now = !isFolderSelected(course.id, folder.id);
+      toggleFolder(course, folder.id, now);
+      tile.classList.toggle("selected", now);
+      check.checked = now;
+      refreshCard(tile);
+    }, 220);
+  });
+  tile.addEventListener("dblclick", () => {
+    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
     state.nav[course.id].path.push({ id: folder.id, name: folder.name });
     renderBrowser(course, browser);
   });

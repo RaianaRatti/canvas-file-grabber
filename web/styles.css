@@ -94,55 +94,47 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
   color: var(--muted); border: 1px solid var(--border); padding: 2px 7px; border-radius: 20px;
 }
 
-.chevron {
-  font: inherit; font-size: 12px; font-weight: 500;
-  background: transparent; color: var(--muted);
-  border: none; cursor: pointer; padding: 4px 8px; transition: transform 0.2s, color 0.15s;
+/* Dropdown caret */
+.caret {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center;
+  cursor: pointer; transition: transform 0.2s, border-color 0.15s, color 0.15s;
 }
-.chevron:hover { color: var(--accent); }
-.chevron.open { transform: rotate(90deg); color: var(--accent); }
+.caret:hover { border-color: var(--accent); color: var(--accent); }
+.caret.open { transform: rotate(180deg); }
 
-.folder-box { padding: 12px 18px 14px 46px; }
+/* Folder browser */
+.browser { border-top: 1px solid var(--border); padding: 14px 18px 18px; }
 
-.folder-tree { display: flex; flex-direction: column; gap: 0; }
+.crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; font-size: 13px; }
+.crumb-link { background: none; border: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0; }
+.crumb-link:hover { text-decoration: underline; }
+.crumb-sep { color: var(--muted); }
 
-.tree-item { user-select: none; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
 
-.tree-header {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 6px; margin: 0 -6px; transition: background 0.15s;
-  border-radius: 6px;
+.tile {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: 14px 8px 12px; border: 1px solid transparent; border-radius: 12px;
+  cursor: pointer; text-align: center; transition: background 0.12s, border-color 0.12s;
 }
-.tree-header:hover { background: var(--surface-hi); }
+.tile:hover { background: var(--surface-hi); }
+.tile.selected { border-color: var(--accent); background: var(--accent-soft); }
 
-.tree-toggle {
-  width: 16px; height: 16px; flex-shrink: 0;
-  background: transparent; border: none;
-  color: var(--muted); cursor: pointer;
-  font-size: 9px; display: flex; align-items: center; justify-content: center;
-  transition: transform 0.15s, color 0.15s;
-  padding: 2px;
+.tile-icon { width: 46px; height: 42px; display: grid; place-items: center; }
+.tile-icon svg { width: 46px; height: 42px; }
+.icon-folder { fill: #f2b64e; }
+.icon-file .body { fill: #cbd0e0; }
+.icon-file .fold { fill: #9aa0b4; }
+
+.tile-label {
+  font-size: 12px; color: var(--text); line-height: 1.3; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.tree-toggle:hover { color: var(--text); }
-.tree-toggle.expanded { transform: rotate(180deg); }
-
-.tree-label {
-  display: flex; align-items: center; gap: 8px;
-  color: var(--text); font-size: 13px; cursor: pointer;
-  flex: 1;
-}
-.tree-label input { accent-color: var(--accent); width: 15px; height: 15px; }
-
-.folder-icon { font-size: 14px; width: 16px; display: inline-block; }
-
-.file-icon { font-size: 12px; width: 16px; display: inline-block; }
-
-.folder-name { font-weight: 500; }
-
-.file-name { font-size: 12px; }
-
-.tree-children { display: flex; flex-direction: column; }
-.tree-children.hidden { display: none; }
+.tile-sub { font-size: 11px; color: var(--muted); }
+.tile-check { position: absolute; top: 8px; right: 8px; accent-color: var(--accent); width: 15px; height: 15px; pointer-events: none; }
+.folder-tile .tile-check { display: none; }
+.folder-tile.selected .tile-check { display: block; }
 
 /* Action bar */
 .actionbar {
@@ -159,8 +151,16 @@ h1 { font-family: "Space Grotesk", sans-serif; font-weight: 700; letter-spacing:
 }
 #ext-input:focus { outline: none; border-color: var(--accent); }
 
-.folder-pick { display: flex; align-items: center; gap: 10px; }
-.path { color: var(--muted); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-pick { display: flex; align-items: center; gap: 12px; }
+.folder-dest {
+  font: inherit; display: flex; align-items: center; gap: 8px;
+  background: var(--ink); border: 1px solid var(--border);
+  border-radius: 10px; padding: 9px 12px; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.folder-dest:hover { border-color: var(--accent); background: var(--surface-hi); }
+.folder-dest-icon { width: 18px; height: 15px; flex-shrink: 0; }
+.path { color: var(--text); font-size: 14px; font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Progress */
 .progress { padding: 14px 30px 22px; }
