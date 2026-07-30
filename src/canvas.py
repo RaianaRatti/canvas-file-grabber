@@ -72,10 +72,15 @@ def list_folder_files(session, base_url, folder_id):
     except requests.HTTPError:
         return []
 
-
 def list_course_files(session, base_url, course_id):
     url = f"{base_url}/api/v1/courses/{course_id}/files"
     try:
         return _get_paginated(session, url, params={"per_page": 100})
     except requests.HTTPError:
-        return []  # some courses disable the files API
+        return []
+
+
+def get_file(session, base_url, file_id):
+    r = session.get(f"{base_url}/api/v1/files/{file_id}", timeout=30)
+    r.raise_for_status()
+    return r.json()
