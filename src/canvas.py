@@ -21,3 +21,34 @@ def session_is_valid(session, base_url):
         return r.status_code == 200
     except requests.RequestException:
         return False
+
+def _get_paginated(session, url, params=None):
+    results = []
+    while url:
+        r = session.get(url, params=params, timeout=30)
+        params = None  # next page links already carry their own params
+        r.raise_for_status()
+        results.extend(r.json())
+
+        url = None
+        for part in r.headers.get("Link", "").split(","):
+            if 'rel="next"' in part:
+                url = part.split(";")[0].strip().strip("<>")
+    return results
+
+
+def list_courses(session, base_url):
+    url = f"{base_url}/api/v1/courses"
+    return _get_paginated(
+        session, url,
+        params={"enrollment_state": "active", "per_page": 100},
+    )
+
+
+def list_course_files(session, base_url, course_id):
+    url = f"{base_url}/api/v1/courses/{course_id}/files"
+    try:
+        return _get_paginated(session, url, params={"per_page": 100})
+    except requests.HTTPError:
+        # Some courses disable the files API. Skip those instead of crashing.
+        return []
