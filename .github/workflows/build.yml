@@ -40,7 +40,9 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           pyinstaller --name CanvasFileGrabber --windowed --onefile `
-            --collect-all playwright --collect-all webview `
+            --collect-all playwright `
+            --collect-all playwright-core `
+            --collect-all webview `
             --paths src `
             --add-data "web;web" --add-data "config.example.json;." `
             run.py
@@ -50,7 +52,9 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           pyinstaller --name CanvasFileGrabber --windowed --onefile \
-            --collect-all playwright --collect-all webview \
+            --collect-all playwright \
+            --collect-all playwright-core \
+            --collect-all webview \
             --paths src \
             --add-data "web:web" --add-data "config.example.json:." \
             run.py
@@ -64,7 +68,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3-gi gir1.2-webkit2-4.1
           pyinstaller --name CanvasFileGrabber --windowed --onefile \
-            --collect-all playwright --collect-all webview \
+            --collect-all playwright \
+            --collect-all playwright-core \
+            --collect-all webview \
             --paths src \
             --add-data "web:web" --add-data "config.example.json:." \
             run.py
