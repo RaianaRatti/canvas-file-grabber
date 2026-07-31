@@ -34,14 +34,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-          playwright install chromium
 
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
         run: |
           pyinstaller --name CanvasFileGrabber --windowed --onefile `
             --collect-all playwright `
-            --collect-all playwright-core `
             --collect-all webview `
             --paths src `
             --add-data "web;web" --add-data "config.example.json;." `
@@ -53,7 +51,6 @@ jobs:
         run: |
           pyinstaller --name CanvasFileGrabber --windowed --onefile \
             --collect-all playwright \
-            --collect-all playwright-core \
             --collect-all webview \
             --paths src \
             --add-data "web:web" --add-data "config.example.json:." \
@@ -69,7 +66,6 @@ jobs:
           sudo apt-get install -y python3-gi gir1.2-webkit2-4.1
           pyinstaller --name CanvasFileGrabber --windowed --onefile \
             --collect-all playwright \
-            --collect-all playwright-core \
             --collect-all webview \
             --paths src \
             --add-data "web:web" --add-data "config.example.json:." \

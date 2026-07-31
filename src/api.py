@@ -28,12 +28,14 @@ class Api:
         return {"logged_in": False, "output_dir": self.cfg["output_dir"]}
 
     def login(self):
-        login_and_save(self.cfg["base_url"], self.cfg["storage_path"])
+        ok = login_and_save(self.cfg["base_url"], self.cfg["storage_path"])
+        if not ok:
+            return {"logged_in": False}
         s = canvas.session_from_storage(self.cfg["storage_path"])
-        ok = canvas.session_is_valid(s, self.cfg["base_url"])
-        if ok:
+        valid = canvas.session_is_valid(s, self.cfg["base_url"])
+        if valid:
             self.session = s
-        return {"logged_in": ok}
+        return {"logged_in": valid}
 
     def get_courses(self):
         courses = canvas.list_courses(self.session, self.cfg["base_url"])
