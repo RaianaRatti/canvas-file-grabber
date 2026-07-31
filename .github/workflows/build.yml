@@ -11,11 +11,15 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
+            artifact: CanvasFileGrabber-Windows.exe
           - os: macos-latest
+            artifact: CanvasFileGrabber-Mac.zip
           - os: ubuntu-latest
+            artifact: CanvasFileGrabber-Linux.zip
 
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +58,7 @@ jobs:
           zip -r ../CanvasFileGrabber-Mac.zip CanvasFileGrabber.app
           cd ..
 
-     - name: Build with PyInstaller (Linux)
+      - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -71,7 +75,4 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            CanvasFileGrabber-Windows.exe
-            CanvasFileGrabber-Mac.zip
-            CanvasFileGrabber-Linux.zip
+          files: ${{ matrix.artifact }}
