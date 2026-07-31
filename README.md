@@ -15,7 +15,7 @@ A desktop app that logs into your Canvas account, shows all your courses (curren
 
 ## Demo
 
-https://github.com/user-attachments/assets/d555c7b4-a278-4cac-a464-2157ee3cc75e
+https://github.com/user-attachments/assets/e268b68f-2aab-4b9a-a2a2-639137f3548a
 
 ## Quick Start
 
