@@ -6,10 +6,14 @@ import sys
 def app_dir():
     """Folder for files that must persist between runs (config.json,
     storage_state.json). When bundled by PyInstaller this is the folder
-    next to the executable, not the temporary extraction folder, so
-    saved data survives between launches."""
+    next to the executable. On macOS, this is next to the .app bundle."""
     if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
+        exe_dir = os.path.dirname(sys.executable)
+        # On macOS, executables live in CanvasFileGrabber.app/Contents/MacOS/
+        # We want config files next to the .app, not inside it
+        if exe_dir.endswith(".app/Contents/MacOS"):
+            return os.path.dirname(os.path.dirname(os.path.dirname(exe_dir)))
+        return exe_dir
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
