@@ -67,13 +67,16 @@ def login_and_save(base_url, storage_path):
 
     with sync_playwright() as p:
         browser = _launch(p)
-        context = browser.new_context()
-        page = context.new_page()
-        page.goto(base_url)
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto(base_url)
 
-        ok = _wait_for_login(page, base_url)
-        if ok:
-            context.storage_state(path=storage_path)
-
-        browser.close()
-        return ok
+            ok = _wait_for_login(page, base_url)
+            if ok:
+                context.storage_state(path=storage_path)
+            return ok
+        finally:
+            # Always close the Chrome window once login is done, even if
+            # saving the session state raised.
+            browser.close()

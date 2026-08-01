@@ -1,4 +1,6 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
+
 import requests
 
 def session_from_storage(storage_path):
@@ -39,15 +41,29 @@ def _get_paginated(session, url, params=None):
 
 
 def list_courses(session, base_url):
-    """Active and past courses, merged and deduped by id."""
-    seen = {}
-    for state in ("completed", "active"):
-        url = f"{base_url}/api/v1/courses"
+    """Active and past courses, merged and deduped by id.
+
+    The two enrollment states are fetched concurrently: each can span
+    several paginated requests, so running them in parallel roughly halves
+    the wait before the course list appears.
+    """
+    url = f"{base_url}/api/v1/courses"
+    states = ("completed", "active")
+
+    def fetch(state):
         params = {"enrollment_state": state, "per_page": 100, "include[]": "term"}
         try:
-            page = _get_paginated(session, url, params=params)
+            return _get_paginated(session, url, params=params)
         except requests.HTTPError:
-            page = []
+            return []
+
+    with ThreadPoolExecutor(max_workers=len(states)) as ex:
+        pages = list(ex.map(fetch, states))
+
+    # Merge in a fixed order (completed first) so "active" always wins the
+    # dedup regardless of which request finished first.
+    seen = {}
+    for state, page in zip(states, pages):
         for c in page:
             cid = c.get("id")
             if cid is None:

@@ -1,5 +1,7 @@
+import json
 import os
 import threading
+import time
 
 import webview
 
@@ -17,6 +19,7 @@ class Api:
             "running": False, "done": 0, "total": 0,
             "current": "", "finished": False,
         }
+        self.login_state = {"stage": "idle", "logged_in": False}
 
     def status(self):
         path = self.cfg["storage_path"]
@@ -27,15 +30,57 @@ class Api:
                 return {"logged_in": True, "output_dir": self.cfg["output_dir"]}
         return {"logged_in": False, "output_dir": self.cfg["output_dir"]}
 
-    def login(self):
+    def start_login(self):
+        if self.login_state["stage"] in ("waiting_for_browser", "validating"):
+            return {"started": False}
+        self.login_state = {"stage": "waiting_for_browser", "logged_in": False}
+        t = threading.Thread(target=self._do_login, daemon=True)
+        t.start()
+        return {"started": True}
+
+    def _set_login_state(self, stage, logged_in):
+        """Update login_state and push it to the page immediately.
+
+        The window that opens the SSO browser loses OS focus for as long as
+        the user is logging in there, and while backgrounded, WKWebView/App
+        Nap can throttle or fully suspend the page's own setTimeout polling
+        loop. evaluate_js is a direct call into the webview from Python, not
+        a JS timer, so it still lands even while the window is backgrounded
+        - polling from the JS side alone could silently skip states.
+        """
+        self.login_state = {"stage": stage, "logged_in": logged_in}
+        try:
+            window = webview.windows[0]
+            window.evaluate_js(
+                f"window.onLoginStateChange && window.onLoginStateChange({json.dumps(self.login_state)})"
+            )
+        except Exception:
+            pass
+
+    def _do_login(self):
         ok = login_and_save(self.cfg["base_url"], self.cfg["storage_path"])
         if not ok:
-            return {"logged_in": False}
+            self._set_login_state("done", False)
+            return
+
+        # The Chrome window is closed at this point. login_and_save() already
+        # confirmed the session works inside the real browser; this follow-up
+        # check re-validates it with a bare requests.Session, which can
+        # transiently fail right after an SSO redirect even though the
+        # cookies are good. Retry briefly instead of sending the user back
+        # to the login screen on a fluke.
+        self._set_login_state("validating", False)
         s = canvas.session_from_storage(self.cfg["storage_path"])
-        valid = canvas.session_is_valid(s, self.cfg["base_url"])
+        valid = False
+        for attempt in range(5):
+            if canvas.session_is_valid(s, self.cfg["base_url"]):
+                valid = True
+                break
+            if attempt < 4:
+                time.sleep(1)
         if valid:
             self.session = s
-        return {"logged_in": valid}
+        self._set_login_state("done", valid)
 
     def get_courses(self):
         courses = canvas.list_courses(self.session, self.cfg["base_url"])

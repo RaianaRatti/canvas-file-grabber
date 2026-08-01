@@ -136,16 +136,52 @@ async function init() {
 async function onLogin() {
   el("login-status").textContent = "A browser window opened. Finish logging in there.";
   el("login-btn").disabled = true;
-  const res = await api().login();
-  if (res.logged_in) showMain();
-  else { el("login-status").textContent = "Login did not complete. Try again."; el("login-btn").disabled = false; }
+  await api().start_login();
+  // From here, Python pushes state changes via window.onLoginStateChange
+  // (see below) instead of us polling, since this window is backgrounded
+  // for the whole time the user is in the separate SSO browser window, and
+  // a setTimeout poll loop can be throttled or suspended while backgrounded.
 }
 
+// Called directly by the Python side (Api._set_login_state) as the login
+// moves through its stages, so the UI updates even while this window is
+// not focused.
+window.onLoginStateChange = function (s) {
+  if (s.stage === "waiting_for_browser") return;
+
+  if (s.stage === "validating") {
+    // The Chrome window just closed itself; move off the login screen right
+    // away instead of leaving the user staring at it during the brief
+    // session check that follows.
+    el("login-view").classList.add("hidden");
+    el("loading-view").classList.remove("hidden");
+    return;
+  }
+
+  // stage === "done"
+  if (s.logged_in) {
+    showMain();
+  } else {
+    el("loading-view").classList.add("hidden");
+    el("login-view").classList.remove("hidden");
+    el("login-status").textContent = "Login did not complete. Try again.";
+    el("login-btn").disabled = false;
+  }
+};
+
 async function showMain() {
+  // Show the loading interstitial the moment login resolves, so the user
+  // never sits on the login page while the courses are fetched.
   el("login-view").classList.add("hidden");
+  el("main-view").classList.add("hidden");
+  el("loading-view").classList.remove("hidden");
+  try {
+    state.courses = await api().get_courses();
+  } catch (e) {
+    state.courses = [];
+  }
+  el("loading-view").classList.add("hidden");
   el("main-view").classList.remove("hidden");
-  el("course-list").innerHTML = "<p class='muted pad'>Loading courses...</p>";
-  state.courses = await api().get_courses();
   renderCourses();
 }
 
