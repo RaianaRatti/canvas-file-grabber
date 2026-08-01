@@ -74,9 +74,8 @@ def login_and_save(base_url, storage_path):
 
             ok = _wait_for_login(page, base_url)
             if ok:
+                os.makedirs(os.path.dirname(storage_path), exist_ok=True)  # Add this
                 context.storage_state(path=storage_path)
             return ok
         finally:
-            # Always close the Chrome window once login is done, even if
-            # saving the session state raised.
             browser.close()
