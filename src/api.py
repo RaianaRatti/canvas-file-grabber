@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import threading
@@ -6,10 +7,24 @@ import traceback
 
 import webview
 
-from config import load_config
+from config import app_dir, load_config
 from auth import login_and_save
 import canvas
 from downloader import matches_extension, safe_name, download_file
+
+
+def _log_exception(context):
+    """Packaged builds run --windowed, so there's no console to catch
+    traceback.print_exc(). Write it to a log file next to the app instead,
+    so failures on background threads are inspectable after the fact."""
+    path = os.path.join(app_dir(), "error.log")
+    try:
+        with open(path, "a") as f:
+            f.write(f"\n[{datetime.datetime.now().isoformat()}] {context}\n")
+            f.write(traceback.format_exc())
+    except Exception:
+        pass
+    traceback.print_exc()
 
 
 class Api:
@@ -65,7 +80,7 @@ class Api:
         try:
             ok = login_and_save(self.cfg["base_url"], self.cfg["storage_path"])
         except Exception:
-            traceback.print_exc()
+            _log_exception("login_and_save failed")
             self._set_login_state("done", False)
             return
         if not ok:
