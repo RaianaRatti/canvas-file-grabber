@@ -127,8 +127,6 @@ The built executable is in `dist/CanvasFileGrabber`.
 
 **Session file is sensitive.** `storage_state.json` contains live login cookies. Anyone who copies it could impersonate your account until the session expires. Never share this file.
 
-**Folder selection is one level only.** Selecting a folder downloads files directly inside it. To get subfolders, open them and select separately.
-
 **Past courses depend on school policy.** Some schools lock old courses after terms end. Those will not show up.
 
 **Rate limits apply.** Canvas throttles heavy API use. Large downloads may need pauses between requests.
