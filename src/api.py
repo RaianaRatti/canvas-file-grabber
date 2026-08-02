@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+import traceback
 
 import webview
 
@@ -58,7 +59,15 @@ class Api:
             pass
 
     def _do_login(self):
-        ok = login_and_save(self.cfg["base_url"], self.cfg["storage_path"])
+        # Runs on a daemon thread with no console attached in packaged builds,
+        # so an uncaught exception here would otherwise kill the thread
+        # silently and leave the UI frozen on "waiting_for_browser" forever.
+        try:
+            ok = login_and_save(self.cfg["base_url"], self.cfg["storage_path"])
+        except Exception:
+            traceback.print_exc()
+            self._set_login_state("done", False)
+            return
         if not ok:
             self._set_login_state("done", False)
             return
