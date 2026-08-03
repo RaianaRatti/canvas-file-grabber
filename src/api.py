@@ -14,9 +14,6 @@ from downloader import matches_extension, safe_name, download_file
 
 
 def _log_exception(context):
-    """Packaged builds run --windowed, so there's no console to catch
-    traceback.print_exc(). Write it to a log file next to the app instead,
-    so failures on background threads are inspectable after the fact."""
     path = os.path.join(app_dir(), "error.log")
     try:
         with open(path, "a") as f:
@@ -25,6 +22,20 @@ def _log_exception(context):
     except Exception:
         pass
     traceback.print_exc()
+
+# NOTES ---------------
+#   1. context -> string describing what program was doing when error happened
+#   2. with open(path, "a") as f -> opens file in append mode (if file exists, open. Else, create)
+#   3. write date and time and then context
+#   4. f.write(traceback.format_exc()) -> writes entire error string
+#           - Traceback (most recent call last):
+#                 File "...", line 42, in download
+#                   1 / 0
+#               ZeroDivisionError: division by zero
+#   5. If error opening file in append mode -> pass
+#   6. write error to console anyway
+
+# SUMMARY: Creates and writes to a file (error.log) and console with the full error, if any occurs
 
 
 class Api:
@@ -37,6 +48,9 @@ class Api:
         }
         self.login_state = {"stage": "idle", "logged_in": False}
 
+    # SUMMARY: Defines initial state of API
+    #       - Loads variables form config, session = None, no progress, login_state = false + idle
+
     def status(self):
         path = self.cfg["storage_path"]
         if os.path.exists(path):
@@ -45,6 +59,8 @@ class Api:
                 self.session = s
                 return {"logged_in": True, "output_dir": self.cfg["output_dir"]}
         return {"logged_in": False, "output_dir": self.cfg["output_dir"]}
+
+    # 
 
     def start_login(self):
         if self.login_state["stage"] in ("waiting_for_browser", "validating"):
