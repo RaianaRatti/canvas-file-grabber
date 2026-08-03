@@ -4,17 +4,21 @@ import sys
 
 
 def app_dir():
-    """Folder for files that must persist between runs (config.json,
-    storage_state.json). When bundled by PyInstaller this is the folder
-    next to the executable. On macOS, this is next to the .app bundle."""
     if getattr(sys, "frozen", False):
         exe_dir = os.path.dirname(sys.executable)
-        # On macOS, executables live in CanvasFileGrabber.app/Contents/MacOS/
-        # We want config files next to the .app, not inside it
         if exe_dir.endswith(".app/Contents/MacOS"):
-            return os.path.dirname(os.path.dirname(os.path.dirname(exe_dir)))
+            os.path.dirname(os.path.dirname(exe_dir))
         return exe_dir
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# NOTES ---------------
+#   1. getattr(sys, "frozen", False) -> returns attribute sys.frozen or False (if DNE)
+#           - "if" -> essentially makes this a check for whether sys has attribute "frozen"
+#           - if "if" == False -> return project root (structure: canvas-file-grabber/src/__file__)
+#   2. exe_dir -> becomes directory of .exe file
+#   3. On macOS, .exe files live in CanvasFileGrabber.app/Contents/MacOS -> we check if that is true
+#           - If it is -> return folder containing .app (so files end up next to .app)
+#           - If it is not (using some other OS) -> return folder containg .exe
 
 
 def load_config(path=None):
