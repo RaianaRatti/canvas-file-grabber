@@ -20,6 +20,8 @@ def app_dir():
 #           - If it is -> return folder containing .app (so files end up next to .app)
 #           - If it is not (using some other OS) -> return folder containg .exe
 
+# SUMMARY: Returns path to directory where .app exists
+
 
 def load_config(path=None):
     if path is None:
@@ -40,3 +42,15 @@ def load_config(path=None):
     cfg.setdefault("output_dir", os.path.join(app_dir(), "downloads"))
     cfg.setdefault("storage_path", os.path.join(app_dir(), "storage_state.json"))
     return cfg
+
+# NOTES ---------------
+#   1. No path given -> path is app_dir
+#   2. Path exists but is wrong -> FileNotFoundError
+#   3. Load elements in path's file into cfg (dictionary)
+#   4. Populate base_url -> obtain from cfg (if exists) or set equal to default ("") and strip "/"
+#           - If base_url does not start with "http", raise ValueError
+#   5. Set values in cfg
+#           - If output_dir is given, use given. Else use default value os.path.join(app_dir(), "downloads")
+#           - Same with storage_path
+
+# SUMMARY: Loads the config file into cfg (dictionary) with default values for output_dir and storage_path if needed

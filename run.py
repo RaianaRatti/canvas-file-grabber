@@ -18,6 +18,8 @@ def resource_path(rel):
 #   6. base becomes path to temporary extracted folder or folder where app file lives
 #           - we return complete path to file
 
+# SUMMARY: Returns abs path to .exe file
+
 sys.path.insert(0, resource_path("src"))
 from api import Api  # noqa: E402
 
@@ -25,6 +27,8 @@ from api import Api  # noqa: E402
 #   1. sys.path -> list of directories that Python searches when you do an import
 #   2. .insert(0, resource_path("src")) -> inserts path to src/ at index 0
 #   3. src contains api.py so now Python can find api and import Api from it
+
+# SUMMARY: Adds src/ to sys so Python can find api and import Api from it
 
 def main():
     api = Api()
@@ -41,6 +45,8 @@ def main():
 # NOTES ---------------
 #   1. webview.create_window -> accepts [title, url of file to load, Python object whose methods you want to expose to JS]
 #   2. The latter is a cool feature as normally, JS cannot directly call Python functions
+
+# SUMMARY: Runs main function
 
 
 if __name__ == "__main__":

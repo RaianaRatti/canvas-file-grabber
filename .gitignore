@@ -8,3 +8,4 @@ __pycache__/
 venv/
 working-project/
 *.mp4
+error.log
