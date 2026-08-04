@@ -122,7 +122,6 @@ def list_courses(session, base_url):
 
 # SUMMARY: Returns list of all pages, multithreaded by state (completed + active), overwriting pages that appear twice and preferring active > completed pages to be kept if overwriting
 
-
 def list_folders(session, base_url, course_id):
     url = f"{base_url}/api/v1/courses/{course_id}/folders"
     try:
@@ -130,6 +129,8 @@ def list_folders(session, base_url, course_id):
     except requests.HTTPError:
         return []
 
+# NOTES ---------------
+# SUMMARY: Gets all folders in a course (fetches every page of folders with _get_paginated())
 
 def list_folder_files(session, base_url, folder_id):
     url = f"{base_url}/api/v1/folders/{folder_id}/files"
@@ -138,6 +139,9 @@ def list_folder_files(session, base_url, folder_id):
     except requests.HTTPError:
         return []
 
+# NOTES ---------------
+# SUMMARY: Gets all files in a specific folder (fetches every page of files with _get_paginated())
+
 def list_course_files(session, base_url, course_id):
     url = f"{base_url}/api/v1/courses/{course_id}/files"
     try:
@@ -145,8 +149,13 @@ def list_course_files(session, base_url, course_id):
     except requests.HTTPError:
         return []
 
+# NOTES ---------------
+# SUMMARY: Gets all files in a specific course (fetche s every page of files with _get_paginated())
 
 def get_file(session, base_url, file_id):
     r = session.get(f"{base_url}/api/v1/files/{file_id}", timeout=30)
     r.raise_for_status()
     return r.json()
+
+# NOTES ---------------
+# SUMMARY: Gets all information about / in one specific file (ensures no error code i.e. 4xx)
