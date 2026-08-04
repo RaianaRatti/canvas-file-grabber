@@ -84,12 +84,6 @@ def _get_paginated(session, url, params=None):
 # SUMMARY: Function repeatedly sends GET reqeusts to every page of a paginated API, combiens all results (https:// URLs) into one list, and returns that list 
 
 def list_courses(session, base_url):
-    """Active and past courses, merged and deduped by id.
-
-    The two enrollment states are fetched concurrently: each can span
-    several paginated requests, so running them in parallel roughly halves
-    the wait before the course list appears.
-    """
     url = f"{base_url}/api/v1/courses"
     states = ("completed", "active")
 
@@ -100,11 +94,12 @@ def list_courses(session, base_url):
         except requests.HTTPError:
             return []
 
+    # NOTES ---------------
+    # SUMMARY: Attempts to fetch all documents in a particular enrollment_state at once
+
     with ThreadPoolExecutor(max_workers=len(states)) as ex:
         pages = list(ex.map(fetch, states))
 
-    # Merge in a fixed order (completed first) so "active" always wins the
-    # dedup regardless of which request finished first.
     seen = {}
     for state, page in zip(states, pages):
         for c in page:
@@ -112,11 +107,20 @@ def list_courses(session, base_url):
             if cid is None:
                 continue
             c["is_past"] = (state == "completed")
-            seen[cid] = c  # active is processed last and wins
+            seen[cid] = c
     return list(seen.values())
 
 # NOTES ---------------
-#   1. 
+#   1. map(fetch, states) -> map(function, iterable) calls the function once for every item in the iterable
+#   2. ex.map(fetch, states) -> runs fetch for each iterable (state) at the same time
+#              - The above returns an iterator to start of a linked list, nodes are classes gotten in each state
+#   3. list(ex.map(fetch, states)) -> wraps nodes in linked list returned by ex.map(...) into list
+#   4. for state, page in zip(states, pages) -> Loops through all pages in each state and stores them in map ("seen")
+#   5. seen[cid] = c -> Appends page by its id ("cid"), if page with that id already existed it is overwritten by new one
+#              - This allows "active" courses' pages to be processed last (and thus kept) as states = (completed, active) (order matters here)
+#   6. Returns list of pages
+
+# SUMMARY: Returns list of all pages, multithreaded by state (completed + active), overwriting pages that appear twice and preferring active > completed pages to be kept if overwriting
 
 
 def list_folders(session, base_url, course_id):
