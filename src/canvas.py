@@ -8,6 +8,7 @@ def session_from_storage(storage_path):
         state = json.load(f)
 
     s = requests.Session()
+
     s.headers.update({"User-Agent": "Mozilla/5.0"})
     for c in state.get("cookies", []):
         s.cookies.set(
@@ -16,6 +17,19 @@ def session_from_storage(storage_path):
         )
     return s
 
+# NOTES ---------------
+#   1. Opens file at storage_path + loads JSON object as python dict = saves storage values in state
+#   2. s = requests.Session() -> creates persistent HTTP session (useful for staying logged in)
+#           - A session remembers cookies, headers, connections
+#   3. s.headers.update({"User-Agent": "Mozilla/5.0"}) -> tells server what kind of client is making request
+#           - In this case, it is a normal web browser
+#           - Our agent is not Mozilla/5.0, we are python-requests/2.23.3 however the latter is often treated as bot requests and may not allow login
+#   4. for c in state.get("cookies", []) -> returns & loops through state.cookies or [] (if cookies is None)
+#   5. s.cookies.set(...) -> adds one cookie to the session
+#           - A cookie has the elements "name", "value", "domain", "path" (use "/" default if path is None)
+#   6. Return session
+
+# SUMMARY: Obtains cookies information from storage_state.json, creates a session, sends header as normal user, loops through cookies and sets current session in cookies
 
 def session_is_valid(session, base_url):
     try:
@@ -24,12 +38,21 @@ def session_is_valid(session, base_url):
     except requests.RequestException:
         return False
 
+# NOTES ---------------
+#   1. Takes session + base_url (e.g. https://umich.instructure.com)
+#   2. r = session.get(...) -> sends GET request to base_url+api/v1/users/self
+#           - This GET request automatically includes your cookies as we are using session.get()
+#   3. Return True or False if cookies were accepted (status_code == 200)
+#   4. If error (no internet, timeout, etc.) -> just return status_is_valid = False
+
+# SUMMARY: Returns whether current session is valid with earlier cookies (timeout = 15ms)
+
 
 def _get_paginated(session, url, params=None):
     results = []
     while url:
         r = session.get(url, params=params, timeout=30)
-        params = None  # next page links already carry their own params
+        params = None
         r.raise_for_status()
         results.extend(r.json())
 
@@ -39,6 +62,26 @@ def _get_paginated(session, url, params=None):
                 url = part.split(";")[0].strip().strip("<>")
     return results
 
+# NOTES ---------------
+#   1. Takes session, url (your API endpoint), params (optional query parameters e.g. per_page = 100)
+#   2. while url (is not None) -> while there is another page
+#   3. r = session.get(...) -> GET request to next page
+#           - r is a requests.Response object
+#   4. params = None -> Canvas includes correct parameter in the url (r) it sends so we do not want to add params in it twice
+#           - First request: GET /courses?per_page=100
+#           - Canvas response: <https://.../courses?page=2&per_page=100>; rel="next"
+#   5. r.raise_for_status() -> raise error if HTTP returns failture status code (4xx)
+#   6. results.extend(r.json()) -> adds this page's data to results
+#   7. url = None -> Set url to none so, if there is no other page, we break out of while
+#   8. Many paginated headers return a link like the following:
+#           - Link:
+#             <https://.../courses?page=2>; rel="next",
+#             <https://.../courses?page=10>; rel="last"
+#      for part in r.headers.get("Link", "")split(",") -> Gets Link header, splits into pieces at each comma (so each line is separate)
+#   9. if 'rel="next"' in part -> checks whether this piece points to the next page
+#   10. url = part.split(";")[0].strip().strip("<>") -> gets just the https://, sets it to url
+
+# SUMMARY: Function repeatedly sends GET reqeusts to every page of a paginated API, combiens all results (https:// URLs) into one list, and returns that list 
 
 def list_courses(session, base_url):
     """Active and past courses, merged and deduped by id.
@@ -71,6 +114,9 @@ def list_courses(session, base_url):
             c["is_past"] = (state == "completed")
             seen[cid] = c  # active is processed last and wins
     return list(seen.values())
+
+# NOTES ---------------
+#   1. 
 
 
 def list_folders(session, base_url, course_id):
