@@ -48,6 +48,7 @@ class Api:
         }
         self.login_state = {"stage": "idle", "logged_in": False}
 
+    # NOTES ---------------
     # SUMMARY: Defines initial state of API
     #       - Loads variables form config, session = None, no progress, login_state = false + idle
 
@@ -60,7 +61,11 @@ class Api:
                 return {"logged_in": True, "output_dir": self.cfg["output_dir"]}
         return {"logged_in": False, "output_dir": self.cfg["output_dir"]}
 
-    # 
+    # NOTES ---------------
+    #   1. If cookies from prevous session work -> logged_in = True, self.session = s (previous session)
+    #   2. If cookies from previous sessio ndo not work -> logged_in = False, self.session = None (default value)
+
+    # SUMMARY: Returns status of session (logged in if storage_state.json cookies still work, not logged in if not)
 
     def start_login(self):
         if self.login_state["stage"] in ("waiting_for_browser", "validating"):
@@ -69,6 +74,11 @@ class Api:
         t = threading.Thread(target=self._do_login, daemon=True)
         t.start()
         return {"started": True}
+
+    # NOTES ---------------
+        #   1. 
+    
+    # SUMMARY: 
 
     def _set_login_state(self, stage, logged_in):
         """Update login_state and push it to the page immediately.
