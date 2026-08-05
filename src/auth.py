@@ -52,8 +52,6 @@ def _download_chromium():
 # SUMMARY: Downloads Chromium browser that Playwright needs, and installs it into your persistent browsers/ folder
 
 def _launch(p):
-    """Prefer a browser already installed on the machine. Fall back to a
-    downloaded Chromium, fetching it once if it is not there yet."""
     for channel in ("chrome", "msedge"):
         try:
             return p.chromium.launch(headless=False, channel=channel)
@@ -66,10 +64,17 @@ def _launch(p):
         _download_chromium()
         return p.chromium.launch(headless=False)
 
+# NOTES ---------------
+#   1. Loop over channels "chrome" and "msedge" and launch the installed Chrome (or Edge) browser
+#   2. If success, return said channel immediately
+#   3. If none succeed, launch Playwright's own Chromium browser
+#           - If downloaded, return it
+#           - If not downloaded (and error thrown), download it and then return it
+
+# SUMMARY: Prefer browser already installed on machine and fallback to downloaded Chromium (download if not present on machine)
+
 
 def _wait_for_login(page, base_url, timeout_s=600):
-    """Poll the Canvas API through the browser's own cookies until the
-    session works. Replaces input(), which has no stdin in a windowed app."""
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         try:
@@ -81,6 +86,12 @@ def _wait_for_login(page, base_url, timeout_s=600):
         page.wait_for_timeout(2000)
     return False
 
+# NOTES ---------------
+#   1. Send requests (r) to page and exit if successful
+#   2. page.wait_for_timeout(2000) -> wait 2s between each reqeust to avoid sending continuous requests
+#   3. Return false if r is never successful until deadline hit (600 seconds)
+
+# SUMMARY: Poll Canvas API through browser's own cookies until session works (or deadline of 600 seconds hit)
 
 def login_and_save(base_url, storage_path):
     _set_browsers_path()
@@ -95,8 +106,19 @@ def login_and_save(base_url, storage_path):
 
             ok = _wait_for_login(page, base_url)
             if ok:
-                os.makedirs(os.path.dirname(storage_path), exist_ok=True)  # Add this
+                os.makedirs(os.path.dirname(storage_path), exist_ok=True)
                 context.storage_state(path=storage_path)
             return ok
         finally:
             browser.close()
+
+# NOTES ---------------
+#   1. with sync_playwright as p -> starts Playwright engine
+#   2. browser = _launch(p) -> Laucnhes Chrome, Edge, or Chromium
+#   3. context = browser.new_context(), page = context.new_page() -> uses fresh browser profile (cookies, localStorage) + browser tab
+#   4. page.goto(base_url) -> Navigates to login page
+#   5. ok = _wait_for_login(page, base_url) -> Boolean based on whether login successful
+#   6. os.makedirs(os.path.dirname(storage_path), exist_ok=True) -> Makes folder for storage_path exists (if existing, nothing happens)
+#   7. context.storage_state(path=storage_path) -> Saves browser data (cookies and localStorage) to storage_path (allow caching)
+#   8. return ok -> return Boolean that shows whether login successful or not
+#   9. finally: browser.close() -> Always close browser regardless of "ok" (login successful or not)
