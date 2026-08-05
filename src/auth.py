@@ -4,24 +4,33 @@ import time
 
 from config import app_dir
 
+# OVERALL NOTES
+#   - Playwright: Python library that can control a real web browser
+#   - Chromium: Open-source web browser that Google Chrome is built on
+#   - When Playwright launches Chromium, it is launching a real browser engine 
+#   - Normally, Playwright downloads Chromium to a location manages. However, when app is packaged with PyInstaller, PyInstaller Playwright hook may set PLAYWRIGHT_BROWSERS_PATH=0 which tells Playwright to use a temporary folder inside bundled app
+#   - Issue: Launch app -> Temp folder created -> Chromium downloaded -> Close app -> Temp folder deleted
+#           - Chromium browser will have to be downloaded again
+#           - This issue is resolved by _set_browsers_path()
+
 
 def _browsers_dir():
-    """Folder where downloaded browsers live. Must persist between runs,
-    so it goes next to config.json rather than inside the bundle."""
     path = os.path.join(app_dir(), "browsers")
     os.makedirs(path, exist_ok=True)
     return path
 
+# NOTES ---------------
+# SUMMARY: Folder where downloaded browsers live, must persist between runs so it goes next to config.json rather than inside the bundle
+
 
 def _set_browsers_path():
-    """PyInstaller's Playwright hook sets PLAYWRIGHT_BROWSERS_PATH to "0",
-    which points at a temp folder inside the bundle that is wiped on every
-    launch. Override it before the driver subprocess starts."""
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _browsers_dir()
+
+# NOTES ---------------
+# SUMMARY: PyInstaller's Playwright hook sets PLAYWRIGHT_BROWSERS_PATH to "0" which points to a temp folder inside the bundle that is wiped on every launch. Override it
 
 
 def _download_chromium():
-    """One-time Chromium download into the persistent browsers folder."""
     from playwright._impl._driver import compute_driver_executable, get_driver_env
 
     node, cli = compute_driver_executable()
@@ -29,6 +38,18 @@ def _download_chromium():
     env["PLAYWRIGHT_BROWSERS_PATH"] = _browsers_dir()
     subprocess.run([str(node), str(cli), "install", "chromium"], env=env, check=True)
 
+# NOTES ---------------
+#   1. compute_driver_executable -> tells Playwright where its Node.js executable + CLI program is
+#   2. get_driver_env -> tells Playwright what env variables it normally uses
+#   3. node, cli = compute_driver_executable -> finds the Playwright executables
+#           - node = /.../node
+#           - cli = /.../cli.js
+#   4. env = get_driver_env -> creates env variables Playwright expects
+#   5. env["PLAYWRIGHT_BROWSERS_PATH"] = _browsers_dir() -> overwrites browsers/ path (so it is not in temp folder)
+#   6. subprocess.run(...) -> launches a separate process, downloads Chromium and installs it in folder specified by PLAYWRIGHT_BROWSERS_PATH
+#           - equivalent to running playwright install chromium OR (more specifically) node cli.js install chromium
+
+# SUMMARY: Downloads Chromium browser that Playwright needs, and installs it into your persistent browsers/ folder
 
 def _launch(p):
     """Prefer a browser already installed on the machine. Fall back to a
